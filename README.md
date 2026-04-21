@@ -135,6 +135,8 @@ Source material → /create-outline → outline.md → /create-deck → deck.ppt
 
 > **The skills work standalone.** You don't need the AIPPT web UI, CLI, or Python environment to use `/create-outline`, `/create-deck`, or `/deck-review`. The pptxgenjs engine (default for `/create-deck`) needs only Node.js and npm; the python-pptx engine requires only a Python venv. The web UI and catalog features add value — searchable slide library, AI tagging, deck ingest — but they're optional. If you just want to turn source material into a polished deck through conversation, the skills are the only entry point you need.
 
+**A note on themes:** The bundled pptxgenjs themes (`default`, `amd`) are a work in progress. Generated decks look good overall, but minor visual issues — text overflow on dense slides, spacing inconsistencies, icon sizing — are common and expected. The build script is the source of truth, so fixes are straightforward: edit the relevant slide function and re-run.
+
 The `/create-deck` workflow generates a JS or Python build script alongside the PPTX. The script is treated as the source of truth for the deck — see [`outlines/slides-as-code-design.md`](outlines/slides-as-code-design.md) for the design behind the upcoming `/edit-deck` skill, which closes the loop with conversational deck editing.
 
 See [`examples/slides-as-code-design/`](examples/slides-as-code-design/) for a real deck built by `/create-deck`, including the generated build script, PDF, and PPTX.
@@ -208,7 +210,7 @@ The full specification — including bold lead-in patterns, two-column syntax, c
 aippt/                  # Python package: CLI, web app, generators, analyzers
 skills/                 # Claude Code skill definitions
 templates/              # Bundled PowerPoint templates
-themes/                 # pptxgenjs theme YAMLs
+themes/                 # pptxgenjs theme YAMLs (work in progress — may need manual tweaks)
 outlines/               # Example and working outlines
 examples/               # Generated example decks (script + PPTX + PDF)
 docs/                   # Sphinx documentation source
