@@ -52,6 +52,10 @@ enhanced-pipeline-text.md
 git-course-*.md
 test-sections.md
 
+# Node
+node_modules/
+*.bak
+
 # Misc
 llm-examples/
 .pytest_cache/
