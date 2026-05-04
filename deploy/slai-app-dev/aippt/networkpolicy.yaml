@@ -1,0 +1,41 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: aippt-net
+  namespace: slai-security-infrastructure-dev
+  labels:
+    app.kubernetes.io/name: aippt
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: aippt
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # OTLP gRPC
+    - ports:
+        - protocol: TCP
+          port: 4317
+    # LLM Gateway (llm-api.amd.com:443)
+    - ports:
+        - protocol: TCP
+          port: 443

@@ -1,0 +1,14 @@
+gateway:
+  base_url: "https://llm-api.amd.com"
+  auth_header: "Ocp-Apim-Subscription-Key"
+  auth_value_env: "AMD_LLM_KEY"
+  # Mandatory user header (enforced May 2, 2026)
+  user_header: "user"
+  user_value_env: "AIPPT_USER_NTID"
+providers:
+  anthropic:
+    path: "/Anthropic"
+  openai:
+    path: "/OpenAI"
+  google:
+    path: "/VertexAI"

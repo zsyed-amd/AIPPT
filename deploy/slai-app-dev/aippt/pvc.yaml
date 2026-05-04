@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: aippt-data
+  namespace: slai-security-infrastructure-dev
+  labels:
+    app.kubernetes.io/name: aippt
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

@@ -6,27 +6,17 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
+# Copy application code (world-readable; ownership enforced by K8s securityContext)
 COPY aippt/ aippt/
 COPY aippt.py .
 COPY pyproject.toml .
 COPY dirs.yaml .
+COPY gateway.yaml gateway.yaml
 
-# Build Sphinx docs (if docs/ exists)
-COPY docs/ docs/
-RUN if [ -f docs/Makefile ]; then \
-      apt-get update && apt-get install -y --no-install-recommends make && \
-      rm -rf /var/lib/apt/lists/* && \
-      pip install --no-cache-dir sphinx sphinx-rtd-theme && \
-      make -C docs html; \
-    fi
-
-# Create non-root user and data directories
-RUN useradd -m appuser && \
-    mkdir -p uploads images backups && \
-    chown -R appuser:appuser /app
-USER appuser
+# Create data directory for SQLite, uploads, and images (writable via fsGroup)
+RUN mkdir -p /app/data/uploads /app/data/images /app/data/backups && \
+    chmod -R 0755 /app/data
 
 EXPOSE 8000
 
-ENTRYPOINT ["python", "aippt.py", "serve", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["python", "aippt.py", "serve", "--host", "0.0.0.0", "--port", "8000", "--db", "/app/data/slides.db", "--uploads-dir", "/app/data/uploads"]

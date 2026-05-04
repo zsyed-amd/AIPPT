@@ -1,0 +1,176 @@
+# Rebuild, push to Harbor, and open a PR on slai-app-dev with stamped manifests.
+#
+# Required GitHub Actions SECRETS (on THIS repo):
+#   HARBOR_USERNAME, HARBOR_PASSWORD  — Harbor robot
+#   SLAI_APP_DEV_PR_TOKEN            — fine-grained PAT for slai-app-dev
+#
+# Required GitHub Actions VARIABLES (on THIS repo):
+#   APP_ID, IMAGE_NAME, BUILD_CONTEXT
+
+name: Deploy prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      slai_base_ref:
+        description: "Base branch on slai-app-dev for the PR (main = prod URL, dev = dev URL)"
+        required: true
+        default: main
+        type: choice
+        options:
+          - main
+          - dev
+
+concurrency:
+  group: deploy-prod-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  harbor-and-manifest-pr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout app repository
+        uses: actions/checkout@v4
+
+      - name: Install yq
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/bin"
+          curl -fsSL -o "$RUNNER_TEMP/yq" \
+            "https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64"
+          install -m 0755 "$RUNNER_TEMP/yq" "${RUNNER_TEMP}/bin/yq"
+          echo "${RUNNER_TEMP}/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve configuration
+        id: cfg
+        env:
+          V_APP_ID: ${{ vars.APP_ID }}
+          V_IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+          V_BUILD_CONTEXT: ${{ vars.BUILD_CONTEXT }}
+          V_HARBOR_REGISTRY: ${{ vars.HARBOR_REGISTRY }}
+          V_HARBOR_PROJECT: ${{ vars.HARBOR_PROJECT }}
+          V_DOCKERFILE: ${{ vars.DOCKERFILE }}
+          V_SLAI_REPO: ${{ vars.SLAI_APP_DEV_REPO }}
+          V_MANIFEST_HANDOFF_REL: ${{ vars.MANIFEST_HANDOFF_REL }}
+        run: |
+          set -euo pipefail
+          APP_ID="${V_APP_ID}"
+          IMAGE_NAME="${V_IMAGE_NAME}"
+          BUILD_CONTEXT="${V_BUILD_CONTEXT}"
+          if [[ -z "${APP_ID}" || -z "${IMAGE_NAME}" || -z "${BUILD_CONTEXT}" ]]; then
+            echo "::error::Set repository Variables APP_ID, IMAGE_NAME, BUILD_CONTEXT (see workflow header)."
+            exit 1
+          fi
+          HARBOR_REGISTRY="${V_HARBOR_REGISTRY:-mkmhub.amd.com}"
+          HARBOR_PROJECT="${V_HARBOR_PROJECT:-hw-slai-dev}"
+          DOCKERFILE="${V_DOCKERFILE:-${BUILD_CONTEXT}/Dockerfile}"
+          SLAI_REPO="${V_SLAI_REPO:-AMD-SLAI/slai-app-dev}"
+          HANDOFF_REL="${V_MANIFEST_HANDOFF_REL:-deploy/slai-app-dev/${APP_ID}}"
+          if [[ ! -f "${DOCKERFILE}" ]]; then
+            echo "::error::Dockerfile not found: ${DOCKERFILE}"
+            exit 1
+          fi
+          echo "app_id=${APP_ID}" >> "$GITHUB_OUTPUT"
+          echo "image_name=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+          echo "build_context=${BUILD_CONTEXT}" >> "$GITHUB_OUTPUT"
+          echo "harbor_registry=${HARBOR_REGISTRY}" >> "$GITHUB_OUTPUT"
+          echo "harbor_project=${HARBOR_PROJECT}" >> "$GITHUB_OUTPUT"
+          echo "dockerfile=${DOCKERFILE}" >> "$GITHUB_OUTPUT"
+          echo "slai_repo=${SLAI_REPO}" >> "$GITHUB_OUTPUT"
+          echo "manifest_handoff_rel=${HANDOFF_REL}" >> "$GITHUB_OUTPUT"
+
+      - name: Set image coordinates
+        id: image
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_SHA}"
+          FULL_IMAGE="${{ steps.cfg.outputs.harbor_registry }}/${{ steps.cfg.outputs.harbor_project }}/${{ steps.cfg.outputs.image_name }}:${TAG}"
+          echo "image_tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "full_image=${FULL_IMAGE}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Harbor
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ steps.cfg.outputs.harbor_registry }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
+
+      - name: Build and push container (linux/amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ steps.cfg.outputs.build_context }}
+          file: ${{ steps.cfg.outputs.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.image.outputs.full_image }}
+
+      - name: Clone slai-app-dev, sync manifests from handoff, stamp image, open PR
+        env:
+          GH_TOKEN: ${{ secrets.SLAI_APP_DEV_PR_TOKEN }}
+          SLAI_BASE_REF: ${{ github.event.inputs.slai_base_ref }}
+          APP_ID: ${{ steps.cfg.outputs.app_id }}
+          SLAI_REPO: ${{ steps.cfg.outputs.slai_repo }}
+          FULL_IMAGE: ${{ steps.image.outputs.full_image }}
+          MANIFEST_HANDOFF_REL: ${{ steps.cfg.outputs.manifest_handoff_rel }}
+        run: |
+          set -euo pipefail
+          command -v gh >/dev/null 2>&1 || {
+            echo "::error::GitHub CLI (gh) not found on runner."
+            exit 1
+          }
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::error::Secret SLAI_APP_DEV_PR_TOKEN is not set."
+            exit 1
+          fi
+          HANDOFF="${GITHUB_WORKSPACE}/${MANIFEST_HANDOFF_REL}"
+          if [[ ! -f "${HANDOFF}/deployment.yaml" ]]; then
+            echo "::error::Missing handoff ${HANDOFF}/deployment.yaml"
+            exit 1
+          fi
+          if [[ ! -f "${HANDOFF}/service.yaml" ]]; then
+            echo "::error::Missing handoff ${HANDOFF}/service.yaml"
+            exit 1
+          fi
+          BRANCH="deploy/${APP_ID}/sync-${GITHUB_SHA:0:12}"
+          WORK="$(mktemp -d)"
+          git clone --depth 1 --branch "${SLAI_BASE_REF}" \
+            "https://x-access-token:${GH_TOKEN}@github.com/${SLAI_REPO}.git" "${WORK}"
+          cd "${WORK}"
+          git checkout -b "${BRANCH}"
+          DEST="deploy/apps/${APP_ID}"
+          mkdir -p "${DEST}"
+          for f in deployment.yaml service.yaml secrets.enc.yaml networkpolicy.yaml pvc.yaml; do
+            if [[ -f "${HANDOFF}/${f}" ]]; then
+              cp "${HANDOFF}/${f}" "${DEST}/${f}"
+            fi
+          done
+          export FULL_IMAGE
+          yq eval '.spec.template.spec.containers[0].image = strenv(FULL_IMAGE)' -i "${DEST}/deployment.yaml"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add "${DEST}"
+          if git diff --staged --quiet; then
+            echo "::notice::No changes to ${DEST} after sync; skipping PR."
+            exit 0
+          fi
+          git commit -m "chore(${APP_ID}): sync manifests, image ${FULL_IMAGE}"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${SLAI_REPO}.git" "HEAD:refs/heads/${BRANCH}"
+          BODY=$(printf '%s\n' \
+            "Automated deploy from \`${GITHUB_REPOSITORY}\` @ \`${GITHUB_SHA}\`." \
+            "" \
+            "- **Handoff copied from:** \`${MANIFEST_HANDOFF_REL}\` → \`${DEST}\`" \
+            "- **FULL_IMAGE:** \`${FULL_IMAGE}\`" \
+            "" \
+            "Merge, then run **Platform deploy (git + Harbor)** on \`${SLAI_REPO}\` with \`app_id=${APP_ID}\` (ref: \`${SLAI_BASE_REF}\`).")
+          gh pr create \
+            --repo "${SLAI_REPO}" \
+            --base "${SLAI_BASE_REF}" \
+            --head "${BRANCH}" \
+            --title "chore(${APP_ID}): sync manifests / bump image" \
+            --body "${BODY}"

@@ -34,6 +34,19 @@ def client(tmp_path, uuid_deck_path):
     return TestClient(app)
 
 
+class TestHealthzEndpoint:
+    """GET /healthz should return status ok."""
+
+    def test_healthz_returns_ok(self, tmp_path):
+        db_path = str(tmp_path / "test.db")
+        uploads_dir = str(tmp_path / "uploads")
+        app = create_app(db_path=db_path, uploads_dir=uploads_dir)
+        client = TestClient(app)
+        resp = client.get("/healthz")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "ok"}
+
+
 class TestDisplayNameInApi:
     """GET /api/decks should include display_name with UUID stripped."""
 

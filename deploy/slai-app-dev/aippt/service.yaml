@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: aippt
+  namespace: slai-security-infrastructure-dev
+  labels:
+    app.kubernetes.io/name: aippt
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: aippt
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

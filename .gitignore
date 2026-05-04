@@ -30,6 +30,12 @@ backups/
 gateway.yaml
 mcp_servers.json
 
+# App-platform (Harbor, SOPS)
+*.raw.yaml
+*.enc.yaml
+!deploy/slai-app-dev/**/secrets.enc.yaml
+.cache/
+
 # IDE / plugins
 .claude/
 !.claude/skills/
