@@ -84,7 +84,7 @@ Read the [pptxgenjs guide](references/pptxgenjs-guide.md) for complete API refer
 
 4. **Generate script** — Write a Node.js ES module (`.mjs`) that imports from the helper library:
    - `import { createDeck, addTitleSlide, addBulletSlide, addImageSlide, addImageBulletsSlide, addProcessFlow, addTwoColumn, addCardGrid, addStatCallout, addCodeSlide, addIconRowsSlide, addSectionDivider, addClosingSlide, addFooter, renderIconSvg, iconToBase64, preRenderIcons, cardShadow, SW, SH } from '../lib/pptxgenjs-helpers.mjs';`
-   - Call `createDeck('themes/<theme>.yaml')` — returns a `deck` object with `pptx`, `theme`, and `layout` already configured
+   - Call `createDeck('themes/<theme>.yaml')` — returns a `deck` object with `pptx`, `theme`, and `layout` already configured. When `--slide-master` is specified, use `createDeck('themes/<theme>.yaml', { useSlideMaster: true })` to enable slide masters (chrome inherited from master, not baked per-slide).
    - Use slide builder functions: `addBulletSlide(deck, title, bullets, slideNum, notes)`, `addProcessFlow(deck, title, steps, slideNum)`, etc.
    - Pre-render icons with `preRenderIcons({ name: { component, color } })` or individual `iconToBase64(renderIconSvg(Icon, 256, color))`
    - **Add slide markers** — Before each slide's code block, insert a comment: `// ═══ Slide N: Title ═══`
@@ -107,6 +107,13 @@ Read the [pptxgenjs guide](references/pptxgenjs-guide.md) for complete API refer
 - **ALWAYS** use `pptx.layout = "LAYOUT_WIDE"` (13.33" × 7.5") — NEVER use `LAYOUT_16x9` (which is only 10" × 5.625")
 - **ALWAYS** define safe-area constants: `SW=13.33, SH=7.5, M=margin, CONTENT_W=SW-2*M, RIGHT_EDGE=SW-M`
 - **ALWAYS** validate element positions: `x + w <= RIGHT_EDGE` and `y + h <= SH - 0.6` (footer zone)
+
+### Slide Master Flag
+
+- `--slide-master` — Enable slide masters. Chrome (background, footer, logo, slide number) is inherited from master slides instead of baked into each slide. Generates proper PowerPoint master/layout structure for downstream editing.
+- `--no-slide-master` — Disable slide masters (default). Chrome is painted directly onto each slide. Use when master inheritance is not needed.
+
+When `--slide-master` is active, the generated script uses `createDeck('themes/<theme>.yaml', { useSlideMaster: true })`. All helper function calls remain identical — the helpers internally branch on `deck.useSlideMaster`.
 
 ### AMD Theme — Visual Modes
 
