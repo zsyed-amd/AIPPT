@@ -41,3 +41,12 @@ footer:
   show: true
   text: ""
   show_slide_numbers: true
+
+# Slide master overrides (optional, used when createDeck({ useSlideMaster: true }))
+# master:
+#   title:
+#     background: "000000"          # override title master bg (default: background_alt)
+#   content:
+#     background: "000000"          # override content master bg (default: background)
+#   section_divider:
+#     panel_width_pct: 18           # override left panel width (default: 18%)
