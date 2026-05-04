@@ -46,6 +46,32 @@ providers:
     path: "/anthropic/v1"
 """
 
+GATEWAY_YAML_USER_HEADER = """\
+gateway:
+  base_url: "https://gateway.example.com"
+  auth_header: "X-Api-Key"
+  auth_value: "test-secret"
+  user_header: "user"
+  user_value_env: "AIPPT_USER_NTID"
+providers:
+  anthropic:
+    path: "/anthropic/v1"
+  openai:
+    path: "/openai/v1"
+"""
+
+GATEWAY_YAML_USER_LITERAL = """\
+gateway:
+  base_url: "https://gateway.example.com"
+  auth_header: "X-Api-Key"
+  auth_value: "test-secret"
+  user_header: "user"
+  user_value: "literal-ntid"
+providers:
+  openai:
+    path: "/openai/v1"
+"""
+
 
 def _write_tmp_yaml(content: str) -> str:
     """Write *content* to a temporary file and return its path."""
@@ -118,6 +144,39 @@ class TestGatewayConfig:
         )
         assert cfg.base_url == "https://gw.example.com"
         assert cfg.provider_paths["openai"] == "/v1"
+
+    def test_load_config_with_user_header_env(self):
+        path = _write_tmp_yaml(GATEWAY_YAML_USER_HEADER)
+        try:
+            with patch.dict(os.environ, {"AIPPT_USER_NTID": "melliott"}):
+                cfg = load_gateway_config(path)
+            assert cfg is not None
+            assert cfg.user_header == "user"
+            assert cfg.user_value == "melliott"
+        finally:
+            os.unlink(path)
+
+    def test_load_config_with_user_value_literal(self):
+        path = _write_tmp_yaml(GATEWAY_YAML_USER_LITERAL)
+        try:
+            cfg = load_gateway_config(path)
+            assert cfg is not None
+            assert cfg.user_header == "user"
+            assert cfg.user_value == "literal-ntid"
+        finally:
+            os.unlink(path)
+
+    def test_load_config_user_header_missing_env_gives_empty(self):
+        path = _write_tmp_yaml(GATEWAY_YAML_USER_HEADER)
+        try:
+            env = {k: v for k, v in os.environ.items() if k != "AIPPT_USER_NTID"}
+            with patch.dict(os.environ, env, clear=True):
+                cfg = load_gateway_config(path)
+            assert cfg is not None
+            assert cfg.user_header == "user"
+            assert cfg.user_value == ""
+        finally:
+            os.unlink(path)
 
 
 # ---------------------------------------------------------------------------
@@ -251,6 +310,50 @@ class TestLLMClientInit:
         mock_client_cls.return_value = MagicMock()
         client = LLMClient(model="gpt-4o", api_key="key", image_model="dall-e-2")
         assert client.image_model == "dall-e-2"
+
+    @patch("aippt.llm.anthropic.Client")
+    def test_gateway_sends_user_header(self, mock_client_cls, models_yaml):
+        mock_client_cls.return_value = MagicMock()
+        gateway = GatewayConfig(
+            base_url="https://gateway.example.com",
+            auth_header="X-Api-Key",
+            auth_value="gw-secret",
+            provider_paths={"anthropic": "/anthropic/v1"},
+            user_header="user",
+            user_value="melliott",
+        )
+        LLMClient(model="claude-3.5-sonnet", gateway=gateway)
+        call_kwargs = mock_client_cls.call_args.kwargs
+        assert call_kwargs["default_headers"]["user"] == "melliott"
+        assert call_kwargs["default_headers"]["X-Api-Key"] == "gw-secret"
+
+    @patch("aippt.llm.anthropic.Client")
+    def test_user_ntid_overrides_gateway_value(self, mock_client_cls, models_yaml):
+        mock_client_cls.return_value = MagicMock()
+        gateway = GatewayConfig(
+            base_url="https://gateway.example.com",
+            auth_header="X-Api-Key",
+            auth_value="gw-secret",
+            provider_paths={"anthropic": "/anthropic/v1"},
+            user_header="user",
+            user_value="default-ntid",
+        )
+        LLMClient(model="claude-3.5-sonnet", gateway=gateway, user_ntid="override-ntid")
+        call_kwargs = mock_client_cls.call_args.kwargs
+        assert call_kwargs["default_headers"]["user"] == "override-ntid"
+
+    @patch("aippt.llm.openai.Client")
+    def test_no_user_header_when_not_configured(self, mock_client_cls, models_yaml):
+        mock_client_cls.return_value = MagicMock()
+        gateway = GatewayConfig(
+            base_url="https://gateway.example.com",
+            auth_header="X-Api-Key",
+            auth_value="gw-secret",
+            provider_paths={"openai": "/openai/v1"},
+        )
+        LLMClient(model="gpt-4o", gateway=gateway)
+        call_kwargs = mock_client_cls.call_args.kwargs
+        assert "user" not in call_kwargs.get("default_headers", {})
 
 
 # ---------------------------------------------------------------------------

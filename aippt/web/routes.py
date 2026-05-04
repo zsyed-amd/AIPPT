@@ -36,6 +36,12 @@ router = APIRouter()
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+@router.get("/healthz")
+async def healthz():
+    """Health check for Kubernetes liveness/readiness probes."""
+    return {"status": "ok"}
+
+
 @router.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Main dashboard -- serves the single-page app."""
@@ -351,13 +357,22 @@ async def export_taxonomy(request: Request):
 # ---------------------------------------------------------------------------
 
 
-def _make_llm_client(request: Request, operation: str, model_override: str = None):
+def _resolve_user_ntid(request: Request, body: dict) -> str:
+    """Resolve user NTID from request body, then env var fallback."""
+    ntid = body.get("user_ntid", "").strip()
+    if not ntid:
+        ntid = os.environ.get("AIPPT_USER_NTID", "").strip()
+    return ntid
+
+
+def _make_llm_client(request: Request, operation: str, model_override: str = None, user_ntid: str = None):
     """Create an LLM client using gateway config and model registry.
 
     Args:
         request: FastAPI request (for app.state access)
         operation: Config operation name ('feedback', 'notes', 'improvements')
         model_override: Optional model name to use instead of configured default
+        user_ntid: Optional NTID for the gateway user header
 
     Returns:
         Configured LLMClient
@@ -379,8 +394,14 @@ def _make_llm_client(request: Request, operation: str, model_override: str = Non
         if os.path.exists(gateway_config_path):
             gateway = load_gateway_config(gateway_config_path)
 
+    if gateway and gateway.user_header and not user_ntid and not gateway.user_value:
+        raise ValueError(
+            "User NTID is required for LLM gateway requests. "
+            "Set your NTID in the web UI or the AIPPT_USER_NTID environment variable."
+        )
+
     try:
-        return LLMClient(model=model, gateway=gateway)
+        return LLMClient(model=model, gateway=gateway, user_ntid=user_ntid)
     except (ConfigError, ValueError) as exc:
         raise ValueError(str(exc))
 
@@ -432,8 +453,9 @@ async def analyze_slide_endpoint(slide_id: int, request: Request):
     if not row:
         return JSONResponse({"error": "Slide not found"}, status_code=404)
 
+    user_ntid = _resolve_user_ntid(request, body)
     try:
-        client = _make_llm_client(request, "feedback", body.get("model"))
+        client = _make_llm_client(request, "feedback", body.get("model"), user_ntid=user_ntid)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=503)
 
@@ -469,8 +491,9 @@ async def suggest_notes_endpoint(slide_id: int, request: Request):
     if not row:
         return JSONResponse({"error": "Slide not found"}, status_code=404)
 
+    user_ntid = _resolve_user_ntid(request, body)
     try:
-        client = _make_llm_client(request, "notes", body.get("model"))
+        client = _make_llm_client(request, "notes", body.get("model"), user_ntid=user_ntid)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=503)
 
@@ -592,8 +615,9 @@ async def improvements_endpoint(slide_id: int, request: Request):
     if not row:
         return JSONResponse({"error": "Slide not found"}, status_code=404)
 
+    user_ntid = _resolve_user_ntid(request, body)
     try:
-        client = _make_llm_client(request, "feedback", body.get("model"))
+        client = _make_llm_client(request, "feedback", body.get("model"), user_ntid=user_ntid)
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=503)
 

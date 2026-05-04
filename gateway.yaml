@@ -2,6 +2,8 @@ gateway:
   base_url: "https://llm-api.amd.com"
   auth_header: "Ocp-Apim-Subscription-Key"
   auth_value_env: "AMD_LLM_KEY"
+  user_header: "user"
+  user_value_env: "AIPPT_USER_NTID"
 providers:
   anthropic:
     path: "/Anthropic"

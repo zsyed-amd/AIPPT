@@ -43,12 +43,17 @@ class GatewayConfig:
     The gateway sits in front of multiple providers and requires a custom
     authentication header.  Provider-specific paths are appended to
     ``base_url`` when building the effective endpoint URL.
+
+    The optional ``user_header`` / ``user_value`` fields support the
+    mandatory ``user: <NTID>`` header required by the AMD LLM Gateway.
     """
 
     base_url: str
     auth_header: str
     auth_value: str
     provider_paths: Dict[str, str] = field(default_factory=dict)
+    user_header: str = ""
+    user_value: str = ""
 
 
 def load_gateway_config(config_path: str) -> Optional[GatewayConfig]:
@@ -104,6 +109,15 @@ def load_gateway_config(config_path: str) -> Optional[GatewayConfig]:
     elif "auth_value" in gw_section:
         auth_value = gw_section["auth_value"]
 
+    # Resolve user header (mandatory gateway "user: <NTID>" header).
+    user_header = gw_section.get("user_header", "")
+    user_value = ""
+    if "user_value_env" in gw_section:
+        env_var = gw_section["user_value_env"]
+        user_value = os.environ.get(env_var, "")
+    elif "user_value" in gw_section:
+        user_value = gw_section["user_value"]
+
     # Build provider_paths mapping.
     provider_paths: Dict[str, str] = {}
     for provider, cfg in data.get("providers", {}).items():
@@ -115,6 +129,8 @@ def load_gateway_config(config_path: str) -> Optional[GatewayConfig]:
         auth_header=auth_header,
         auth_value=auth_value,
         provider_paths=provider_paths,
+        user_header=user_header,
+        user_value=user_value,
     )
 
 
@@ -235,6 +251,7 @@ class LLMClient:
         api_base: Optional[str] = None,
         gateway: Optional[GatewayConfig] = None,
         image_model: str = "dall-e-3",
+        user_ntid: Optional[str] = None,
     ) -> None:
         self.model = model
         self.api_base = api_base
@@ -255,6 +272,10 @@ class LLMClient:
             effective_base = gateway.base_url.rstrip("/") + provider_path
             if gateway.auth_header and gateway.auth_value:
                 extra_headers[gateway.auth_header] = gateway.auth_value
+            if gateway.user_header:
+                ntid = user_ntid or gateway.user_value
+                if ntid:
+                    extra_headers[gateway.user_header] = ntid
 
         # Resolve API key: explicit > gateway auth > environment variable
         resolved_key = api_key

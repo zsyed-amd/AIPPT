@@ -425,6 +425,9 @@
             <li><span id="view-only-badge" style="display:none; background:var(--pico-primary-background); color:var(--pico-primary-inverse); padding:0.15rem 0.5rem; border-radius:1rem; font-size:0.75rem; font-weight:600;">Library Mode</span></li>
         </ul>
         <ul>
+            <li id="ntid-nav-item" style="display:none;">
+                <input type="text" id="ntid-input" placeholder="NTID" style="margin:0; padding:0.25rem 0.5rem; font-size:0.8rem; width:8rem;" title="Your AMD NTID (required for LLM operations)" oninput="saveNtid(this.value)">
+            </li>
             <li><button class="nav-tags-btn outline" id="tags-toggle-btn" onclick="toggleTagSidebar()">Tags</button></li>
             <li><a href="#" onclick="showDecks(); return false;">Decks</a></li>
             <li><a href="#" onclick="showSearch(); return false;">Search</a></li>
@@ -718,6 +721,26 @@
         let slideList = [];       // ordered slide IDs for nav context
         let currentSlideIndex = -1;
         let viewOnly = false;
+
+        function getUserNtid() {
+            return (document.getElementById('ntid-input')?.value || '').trim();
+        }
+
+        function saveNtid(val) {
+            localStorage.setItem('aippt_ntid', val.trim());
+        }
+
+        function initNtid() {
+            const saved = localStorage.getItem('aippt_ntid') || '';
+            const input = document.getElementById('ntid-input');
+            if (input) input.value = saved;
+        }
+
+        function showNtidInput() {
+            if (!viewOnly) {
+                document.getElementById('ntid-nav-item').style.display = '';
+            }
+        }
 
         async function fetchConfig() {
             try {
@@ -1363,10 +1386,13 @@
             const endpoint = `/api/slides/${currentSlideId}/${action}`;
             let data;
             try {
+                const reqBody = {};
+                const ntid = getUserNtid();
+                if (ntid) reqBody.user_ntid = ntid;
                 const resp = await fetch(endpoint, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({}),
+                    body: JSON.stringify(reqBody),
                 });
                 data = await resp.json();
                 if (!resp.ok) {
@@ -1886,6 +1912,8 @@
 
         // Load config, decks, sidebar, and taxonomy on page load
         fetchConfig().then(() => {
+            initNtid();
+            showNtidInput();
             applySidebarState();
             if (sidebarOpen) loadSidebarTags();
             showDecks();
