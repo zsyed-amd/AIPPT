@@ -32,7 +32,14 @@ Options:
 - ``--api-provider {anthropic,openai,compatible}`` -- Force a specific provider
 - ``--test N`` -- Process only the first *N* slides (for quick testing)
 - ``--analyze-template`` -- Analyze template layouts before generating
-- ``--image-gen {claude,dalle,openai,none}`` -- Diagram generation mode (default: ``none``)
+- ``--image-gen {claude,dalle,openai,mcp,none}`` -- Diagram generation mode (default: ``none``)
+- ``--corp-template PATH`` -- Merge generated slides into a corporate template as a
+  post-processing step. The output file will contain the corporate master and all
+  31 layouts, with each slide re-assigned to a matching corporate layout based on
+  ``[AIPPT-META]`` metadata.
+- ``--audience {engineers,executives,product,mixed}`` -- Target audience (default: ``mixed``)
+- ``--show-plan`` -- Print the deck narrative plan before enhancing (requires ``--enhance``)
+- ``--no-plan`` -- Skip deck-level narrative planning (per-slide enhancement only)
 
 Examples::
 
@@ -47,6 +54,9 @@ Examples::
 
     # Test run: first 3 slides only
     python aippt.py create outline.md template.pptx output.pptx --enhance --test 3
+
+    # With corporate template merge
+    python aippt.py create outline.md template.pptx output.pptx --corp-template templates/corp.pptx
 
 When ``--enhance`` is enabled, the LLM analyzes each slide and selects from
 five layout types (``bullet``, ``numbered``, ``two_column``, ``diagram``,
@@ -485,6 +495,98 @@ Options:
 Example::
 
     python aippt.py migrate-paths
+
+merge
+-----
+
+Merge multiple PPTX section files into a single deck. Used internally by the
+sectioned generation pipeline but available as a standalone command.
+
+.. code-block:: text
+
+   aippt.py merge <chunks...> -o <output> [options]
+
+Arguments:
+
+- ``chunks`` -- One or more PPTX files to merge, in order
+
+Options:
+
+- ``-o, --output PATH`` -- Output file path (required)
+- ``--no-renumber`` -- Skip slide number renumbering
+
+Example::
+
+    python aippt.py merge section-1.pptx section-2.pptx section-3.pptx -o final.pptx
+
+merge-template
+--------------
+
+Merge a generated deck into a corporate template. The corporate template's
+master and all layouts are preserved in the output, and each slide is
+re-assigned to a matching corporate layout based on ``[AIPPT-META]``
+``layout_selected`` metadata in speaker notes.
+
+.. code-block:: text
+
+   aippt.py merge-template <generated_pptx> --corp-template <template> -o <output> [options]
+
+Arguments:
+
+- ``generated_pptx`` -- Path to the AI-generated PPTX deck
+
+Options:
+
+- ``--corp-template PATH`` -- Path to the corporate template PPTX (required)
+- ``-o, --output PATH`` -- Output file path (required)
+- ``--layout-map PATH`` -- JSON file overriding the default layout map
+- ``--dry-run`` -- Print layout assignments without writing the output file
+
+The default layout map assigns generated slides to corporate layouts:
+
+.. code-block:: text
+
+   title          -> Title Slide - No Image
+   bullet         -> Title and Content
+   two_column     -> Two Content
+   code           -> Developer Code Layout
+   section_divider -> Divider slide
+   closing        -> Closing logo slide
+   (unmapped)     -> Blank
+
+Examples::
+
+    # Merge a generated deck into the corporate template
+    python aippt.py merge-template generated.pptx --corp-template templates/corp.pptx -o merged.pptx
+
+    # Preview layout assignments without writing
+    python aippt.py merge-template generated.pptx --corp-template templates/corp.pptx -o merged.pptx --dry-run
+
+    # Use a custom layout map
+    python aippt.py merge-template generated.pptx --corp-template templates/corp.pptx -o merged.pptx --layout-map custom-map.json
+
+metadata
+--------
+
+Extract embedded ``[AIPPT-META]`` blocks from a PPTX file's speaker notes.
+Outputs JSON with operation history, layout selections, and lineage tracking.
+
+.. code-block:: text
+
+   aippt.py metadata <deck> [options]
+
+Arguments:
+
+- ``deck`` -- Path to the PPTX file
+
+Options:
+
+- ``--slide N`` -- Show metadata for a specific slide number only
+
+Examples::
+
+    python aippt.py metadata deck.pptx
+    python aippt.py metadata deck.pptx --slide 3
 
 db-info
 -------

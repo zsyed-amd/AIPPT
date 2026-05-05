@@ -23,6 +23,8 @@ Key features:
   single-page application
 - **Improve** -- LLM-powered rewrite of slide content with revision history
   tracked in speaker notes
+- **Corporate Template Merge** -- Inject corporate master/layouts into
+  generated decks so PowerPoint users see the full branded layout palette
 
 Quick Start
 -----------
