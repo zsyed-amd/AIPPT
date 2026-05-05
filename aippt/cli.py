@@ -75,6 +75,7 @@ def cmd_create(args):
             audience=getattr(args, 'audience', None),
             show_plan=getattr(args, 'show_plan', False),
             no_plan=getattr(args, 'no_plan', False),
+            corp_template=getattr(args, 'corp_template', None),
         )
         run_pipeline(config)
     except FileNotFoundError as e:
@@ -1286,6 +1287,64 @@ def cmd_merge(args):
         return 1
 
 
+def cmd_merge_template(args):
+    """Merge a generated deck into a corporate template."""
+    import json as json_mod
+    from aippt.template_merge import merge_with_template
+
+    if not os.path.exists(args.generated_pptx):
+        logger.error(f"Generated deck not found: {args.generated_pptx}")
+        return 1
+
+    if not os.path.exists(args.corp_template):
+        logger.error(f"Corporate template not found: {args.corp_template}")
+        return 1
+
+    layout_map = None
+    if args.layout_map:
+        if not os.path.exists(args.layout_map):
+            logger.error(f"Layout map file not found: {args.layout_map}")
+            return 1
+        with open(args.layout_map, encoding="utf-8") as f:
+            layout_map = json_mod.load(f)
+
+    if args.dry_run:
+        from pptx import Presentation as PptxPresentation
+        from aippt.template_merge import _get_layout_for_slide, CORP_LAYOUT_MAP, FALLBACK_LAYOUT
+
+        effective_map = layout_map if layout_map is not None else CORP_LAYOUT_MAP
+        src_prs = PptxPresentation(args.generated_pptx)
+        tgt_prs = PptxPresentation(args.corp_template)
+
+        print(f"Dry run: {len(src_prs.slides)} slides from {args.generated_pptx}")
+        print(f"Template: {args.corp_template}")
+        print()
+        for i, slide in enumerate(src_prs.slides, 1):
+            _, source_type, target_name = _get_layout_for_slide(
+                slide, effective_map, FALLBACK_LAYOUT, tgt_prs
+            )
+            title = ""
+            for shape in slide.shapes:
+                if shape.has_text_frame and shape.text_frame.text.strip():
+                    title = shape.text_frame.text.strip()
+                    break
+            print(f"  Slide {i}: '{title}' [{source_type or 'none'}] -> {target_name}")
+        return 0
+
+    try:
+        result = merge_with_template(
+            args.generated_pptx, args.corp_template, args.output,
+            layout_map=layout_map,
+        )
+        print(f"Merged {result['slide_count']} slides -> {result['output_path']}")
+        for a in result["layout_assignments"]:
+            print(f"  Slide {a['slide_num']}: '{a['title']}' [{a['source_layout'] or 'none'}] -> {a['target_layout']}")
+        return 0
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(str(e))
+        return 1
+
+
 def cmd_metadata(args):
     """Dump embedded AI metadata from a PPTX file as JSON."""
     import json
@@ -1357,6 +1416,8 @@ def build_parser():
                           help="Print the deck narrative plan before enhancing (requires --enhance)")
     p_create.add_argument("--no-plan", action="store_true",
                           help="Skip deck-level narrative planning (per-slide enhancement only)")
+    p_create.add_argument("--corp-template", default=None,
+                          help="Path to corporate template PPTX — merge generated slides into this template as post-processing")
 
     # reverse
     p_reverse = sub.add_parser("reverse", help="Convert PowerPoint to markdown")
@@ -1588,6 +1649,14 @@ def build_parser():
     p_metadata.add_argument("deck", help="Path to PPTX file")
     p_metadata.add_argument("--slide", type=int, default=None, help="Show metadata for specific slide number")
 
+    # merge-template
+    p_merge_tpl = sub.add_parser("merge-template", help="Merge generated deck into corporate template")
+    p_merge_tpl.add_argument("generated_pptx", help="Path to the generated PPTX deck")
+    p_merge_tpl.add_argument("--corp-template", required=True, help="Path to corporate template PPTX")
+    p_merge_tpl.add_argument("-o", "--output", required=True, help="Output file path")
+    p_merge_tpl.add_argument("--layout-map", default=None, help="JSON file overriding default layout map")
+    p_merge_tpl.add_argument("--dry-run", action="store_true", help="Print layout assignments without writing")
+
     return parser
 
 
@@ -1631,6 +1700,7 @@ def main():
         "mcp": cmd_mcp,
         "merge": cmd_merge,
         "metadata": cmd_metadata,
+        "merge-template": cmd_merge_template,
     }
 
     if not args.command:

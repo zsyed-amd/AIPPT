@@ -389,3 +389,116 @@ class TestMergeWithTemplate:
         assert "Developer Code Layout" in layout_names
         assert "Closing logo slide" in layout_names
         assert len(layout_names) >= 31
+
+
+class TestMergeTemplateCLI:
+    """Test the merge-template CLI subcommand."""
+
+    def _make_generated_deck(self, path, slide_specs):
+        """Create a generated deck with slides that have metadata."""
+        prs = Presentation()
+        for title, layout_type in slide_specs:
+            slide = prs.slides.add_slide(prs.slide_layouts[0])
+            txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(10), Inches(0.7))
+            txBox.text_frame.text = title
+            if layout_type is not None:
+                entries = [{"operation": "enhance", "layout_selected": layout_type}]
+                meta_block = f"[AIPPT-META]\n{json.dumps(entries, indent=2)}\n[/AIPPT-META]"
+                slide.notes_slide.notes_text_frame.text = meta_block
+        prs.save(path)
+
+    def test_merge_template_subcommand(self, tmp_path):
+        from aippt.cli import build_parser
+
+        gen_path = str(tmp_path / "generated.pptx")
+        out_path = str(tmp_path / "merged.pptx")
+        self._make_generated_deck(gen_path, [("Test", "bullet")])
+
+        parser = build_parser()
+        args = parser.parse_args([
+            "merge-template", gen_path,
+            "--corp-template", "templates/corp.pptx",
+            "-o", out_path,
+        ])
+        assert args.command == "merge-template"
+        assert args.generated_pptx == gen_path
+        assert args.corp_template == "templates/corp.pptx"
+        assert args.output == out_path
+
+    def test_merge_template_dry_run_flag(self, tmp_path):
+        from aippt.cli import build_parser
+
+        gen_path = str(tmp_path / "generated.pptx")
+        self._make_generated_deck(gen_path, [("Test", "bullet")])
+
+        parser = build_parser()
+        args = parser.parse_args([
+            "merge-template", gen_path,
+            "--corp-template", "templates/corp.pptx",
+            "-o", str(tmp_path / "out.pptx"),
+            "--dry-run",
+        ])
+        assert args.dry_run is True
+
+    def test_cmd_merge_template_runs(self, tmp_path):
+        from aippt.cli import cmd_merge_template
+
+        gen_path = str(tmp_path / "generated.pptx")
+        out_path = str(tmp_path / "merged.pptx")
+        self._make_generated_deck(gen_path, [("Test", "bullet")])
+
+        class Args:
+            generated_pptx = gen_path
+            corp_template = "templates/corp.pptx"
+            output = out_path
+            layout_map = None
+            dry_run = False
+
+        result = cmd_merge_template(Args())
+        assert result == 0
+        assert os.path.isfile(out_path)
+
+    def test_cmd_merge_template_dry_run(self, tmp_path, capsys):
+        from aippt.cli import cmd_merge_template
+
+        gen_path = str(tmp_path / "generated.pptx")
+        self._make_generated_deck(gen_path, [("Test", "bullet")])
+
+        class Args:
+            generated_pptx = gen_path
+            corp_template = "templates/corp.pptx"
+            output = str(tmp_path / "out.pptx")
+            layout_map = None
+            dry_run = True
+
+        result = cmd_merge_template(Args())
+        assert result == 0
+        assert not os.path.isfile(str(tmp_path / "out.pptx"))
+        captured = capsys.readouterr()
+        assert "bullet" in captured.out
+        assert "Title and Content" in captured.out
+
+
+class TestPipelineIntegration:
+    """Test that PipelineConfig accepts corp_template field."""
+
+    def test_pipeline_config_has_corp_template(self):
+        from aippt.pipeline import PipelineConfig
+
+        config = PipelineConfig(
+            outline_text="## Test\n- bullet",
+            template_path="templates/corp.pptx",
+            output_path="/tmp/test.pptx",
+            corp_template="templates/corp.pptx",
+        )
+        assert config.corp_template == "templates/corp.pptx"
+
+    def test_pipeline_config_corp_template_default_none(self):
+        from aippt.pipeline import PipelineConfig
+
+        config = PipelineConfig(
+            outline_text="## Test\n- bullet",
+            template_path="templates/corp.pptx",
+            output_path="/tmp/test.pptx",
+        )
+        assert config.corp_template is None
