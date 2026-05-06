@@ -1,0 +1,50 @@
+name: AMD Instinct
+description: Teal-on-dark Instinct design system — technical marketing, benchmarks, engineering decks
+
+# Colors from the AMD Instinct design system (DESIGN.md / tokens.css).
+# background=#131416 (Daedalus black), accent=#00C2DE (AMD teal),
+# surface hierarchy: L0=#131416, L1=#1d1f21, L2=#27272a.
+
+colors:
+  background: "131416"
+  background_alt: "1d1f21"
+  surface: "27272a"
+  text_primary: "eaebec"
+  text_secondary: "b4b9bc"
+  text_body: "d0d4d8"
+  accent: "00C2DE"
+  accent_alt: "F26522"
+  warning: "ED1C24"
+
+fonts:
+  heading: "Arial"
+  body: "Arial"
+  mono: "Consolas"
+
+logo:
+  path: "themes/assets/instinct-lockup-wht.png"
+  position: "bottom-right"
+  width_inches: 1.5
+  height_inches: 0.32
+  x_inches: 11.83
+  y_inches: 7.0
+
+slide:
+  layout: "LAYOUT_WIDE"
+  margin_inches: 0.64
+
+footer:
+  show: true
+  text: ""
+  show_slide_numbers: true
+
+master:
+  background_image: "themes/assets/instinct-dotgrid.png"
+  title:
+    background: "131416"
+  content:
+    background: "131416"
+    eyebrow: true
+    glow_line: true
+  section_divider:
+    panel_width_pct: 18

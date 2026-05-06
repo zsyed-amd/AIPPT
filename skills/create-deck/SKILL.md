@@ -60,7 +60,11 @@ If the user mentions "template" or provides a `.pptx` template path, auto-select
 
 ### Step 3: Choose Theme or Template
 
-**If pptxgenjs:** Scan `themes/` for `.yaml` files. If only one theme exists, use it without asking. If multiple, present choices.
+**If pptxgenjs:** Scan `themes/` for `.yaml` files. If only one theme exists, use it without asking. If multiple, present choices with guidance:
+
+- **`amd`** — Corporate/executive presentations matching the official AMD template. Black backgrounds, minimal chrome.
+- **`instinct`** — Technical marketing, benchmark, and engineering-audience decks. Teal-on-dark Instinct design system with eyebrow rules and glow-line dividers. Best with `--slide-master`.
+- **`default`** — Unbranded dark theme for general-purpose decks.
 
 **If python-pptx:** Scan `templates/` for `.pptx` files. Present choices.
 
