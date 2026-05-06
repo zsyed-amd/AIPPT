@@ -34,10 +34,15 @@ let sn = 1;
 {
   const slide = pptx.addSlide({ masterName: masterNameFor('title') });
 
-  // Atmospheric teal glow — large diffuse ellipse right-of-center
+  // Atmospheric teal glow — two concentric ellipses for radial-gradient effect
   slide.addShape(pptx.ShapeType.ellipse, {
     x: 7.8, y: 0.8, w: 6.0, h: 6.0,
     fill: { color: '00C2DE', transparency: 94 },
+    line: { type: 'none' },
+  });
+  slide.addShape(pptx.ShapeType.ellipse, {
+    x: 9.3, y: 2.0, w: 3.0, h: 3.0,
+    fill: { color: '00C2DE', transparency: 88 },
     line: { type: 'none' },
   });
 
