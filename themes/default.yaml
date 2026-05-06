@@ -31,6 +31,43 @@ footer:
   text: ""
   show_slide_numbers: true
 
+typography:
+  title_size: 36
+  heading_size: 28
+  subtitle_size: 18
+  body_size: 18
+  small_size: 14
+  eyebrow_size: 8
+  eyebrow_bold: false
+  eyebrow_char_spacing: 6
+  stat_size: 48
+  stat_bold: true
+  stat_label_size: 16
+  stat_desc_size: 13
+  code_size: 14
+  footer_size: 10
+
+data_colors:
+  series_1: ""
+  series_2: ""
+  series_3: ""
+  positive: "1AA01A"
+  negative: "D73D2B"
+  neutral: ""
+
+shadow:
+  blur: 4
+  offset: 2
+  angle: 135
+  color: "000000"
+  opacity: 0.12
+
+eyebrow:
+  show: true
+  dash_width: 1.2
+  dash_height: 0.035
+  label_offset: 1.35
+
 # Slide master overrides (optional, used when createDeck({ useSlideMaster: true }))
 # master:
 #   title:
