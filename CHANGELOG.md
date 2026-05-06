@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Theme token schema v2: typography scale (14 tokens), data visualization colors (6 tokens), shadow configuration (5 tokens), and eyebrow component tokens (4 tokens) in theme YAML
+- `createDeck()` accepts `overrides` option for per-deck token adjustments by agents
+- Expanded color slots: `code_bg`, `code_text`, `heading_color`, `eyebrow_color`, `stat_color`
+
+### Changed
+
+- ~40 hardcoded design values in pptxgenjs helpers now read from theme tokens
+- `cardShadow()` accepts `theme` parameter and reads from `theme.shadow.*`
+- All three bundled themes updated with explicit token values (no visual change for `default` and `amd`; `instinct` gets design-system-aligned values)
+
+### Added
+
 - Sphinx-based documentation covering CLI reference, web UI guide, backup/restore, and configuration
 - "Docs" link in web UI nav bar opening built documentation in a new tab
 - FastAPI static mount at `/docs` serving Sphinx HTML (conditional on docs being built)
