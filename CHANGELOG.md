@@ -8,138 +8,168 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Stat callout cards with shadow and rounded corners
+- URL auto-linking in slide content (bare URLs converted to hyperlinks)
+
+### Changed
+
+- Two-column layout alignment improved for density-aware content distribution
+
+## [3.3.0] - 2026-05-06 — Theme Token Schema v2
+
+### Added
+
 - Theme token schema v2: typography scale (14 tokens), data visualization colors (6 tokens), shadow configuration (5 tokens), and eyebrow component tokens (4 tokens) in theme YAML
 - `createDeck()` accepts `overrides` option for per-deck token adjustments by agents
 - Expanded color slots: `code_bg`, `code_text`, `heading_color`, `eyebrow_color`, `stat_color`
+- `TOKEN_DEFAULTS` constant and expanded `loadTheme()` with new token sections
+- Tests for all new token categories (typography, shadow, eyebrow, data_colors, overrides)
 
 ### Changed
 
 - ~40 hardcoded design values in pptxgenjs helpers now read from theme tokens
-- `cardShadow()` accepts `theme` parameter and reads from `theme.shadow.*`
+- `cardShadow()` reads from `theme.shadow.*` tokens
+- `addEyebrowText()` reads from `theme.eyebrow` and `theme.typography` tokens
+- `addCodeSlide()` reads `code_bg`, `code_text`, `code_size` from theme
+- `addStatCallout()` reads from `theme.typography` and semantic color tokens
+- Master slide number reads `fontSize` from `theme.typography.footer_size`
 - All three bundled themes updated with explicit token values (no visual change for `default` and `amd`; `instinct` gets design-system-aligned values)
+- Eyebrow drawn per-slide instead of globally; two-column layout is density-aware
+
+## [3.2.0] - 2026-05-06 — AMD Instinct Design System Theme
 
 ### Added
 
-- Sphinx-based documentation covering CLI reference, web UI guide, backup/restore, and configuration
-- "Docs" link in web UI nav bar opening built documentation in a new tab
-- FastAPI static mount at `/docs` serving Sphinx HTML (conditional on docs being built)
-- `docs-requirements.txt` with Sphinx dependencies
+- `instinct.yaml` pptxgenjs theme with AMD Instinct Design System tokens
+- Four slide masters: TITLE, CONTENT, SECTION_DIVIDER, CLOSING
+- `addEyebrowText()` helper for branded eyebrow text
+- Glow-line accent and dark background with teal highlights
+- 10-slide demo deck showcasing all Instinct theme features
+
+### Fixed
+
+- Inner ellipse added for radial-gradient glow on title slide
+
+## [3.1.0] - 2026-05-05 — Corporate Template Merge
+
+### Added
+
+- `merge-template` CLI subcommand for corporate template merge
+- `--corp-template` flag on `create` subcommand for pipeline integration
+- Core merge module with layout mapping and slide copy from corporate `.pptx` masters
+
+### Changed
+
+- TestChromeNotDuplicated tests and AMD 27-slide side-by-side example added
+
+## [3.0.0] - 2026-05-04 — Slide Masters + LLM Gateway Compliance
+
+### Added
+
+- Slide masters: `defineSlideMaster()` for TITLE, CONTENT, and SECTION_DIVIDER
+- `useSlideMaster` opt-in flag on `createDeck()` — chrome inherited from masters instead of baked per-slide
+- Chrome gating in all content slide helpers, title slide, closing slide, and section divider
+- Master section parsing in `loadTheme()` with commented examples in theme YAMLs
+- Master-on variant of slides-as-code-design example
+- Python-pptx validation tests for slide masters
+- Mandatory `user: NTID` header support for AMD LLM Gateway compliance (deadline: May 2)
+- Web UI input for NTID user header
+- App-platform deployment scaffold (Dockerfile, K8s manifests, SOPS secrets, Harbor publishing, GitHub Actions CI/CD)
+
+### Fixed
+
+- "Thank You" fallback text in `addClosingSlide()` for logo-less themes
+
+## [2.5.0] - 2026-03-11 — Slides-as-Code Skills
+
+Shipped as three Claude Code skills on the SLAI Marketplace (PR #636).
+
+### Added
+
+- `/create-outline` skill: analyze source material (docs, repos, URLs, web apps) → structured markdown outline with Playwright screenshots
+- `/create-deck` skill: markdown outline → PowerPoint via pptxgenjs or python-pptx engine, with theme-based styling
+- `/deck-review` (formerly `/edit-deck`) skill: visual QA loop with slide screenshots, source code editing, and `[AIPPT-META]` change tracking in speaker notes
+- Slides-as-code foundation: source tracking in catalog, `---aippt-meta---` speaker notes format
+- Slide helper libraries for reusable layout components
+- Sectioned deck generation with section dividers
+
+### Changed
+
+- Pipeline refactored: shared `pipeline.py` + `builder.py` extracted from CLI
+- Audience-aware enhancement with audience selector in web UI
+- Deck-level narrative planning for coherent slide flow
+- Insight-driven title rewriting in enhancement pipeline
+- Iterative improvement loop with self-evaluation
+
+## [2.4.0] - 2026-03-08 — MCP + Slide Notes Metadata
+
+### Added
+
+- MCP client infrastructure layer using FastMCP, with config loading, server/tool discovery, and `mcp list` CLI command
+- MCP text-to-image generation for slide visuals
+- Slide notes metadata and LLM action logging in `[AIPPT-META]` format
+
+## [2.3.0] - 2026-03-05 — Web/CLI Parity + Content Enhancement
+
+### Added
+
+- Web UI / CLI feature parity for deck creation
+- CLI deck management commands (`list`, `delete`, `info`)
+- Content enhancement in `--enhance` mode with richer bullet rewriting
+- Image + text co-display on slides
+
+## [2.2.0] - 2026-03-04 — Docker, Library Mode, Portability
+
+### Added
+
+- `Dockerfile` and `docker-compose.yml` with view-only (default) and full profiles
+- `.dockerignore` for efficient image builds
+- `AIPPT_VIEW_ONLY` environment variable for container-friendly view-only mode
+- Library / view-only mode (`--view-only` flag or auto-detected when no LLM config)
+- "Library Mode" badge in nav bar; LLM features disabled with tooltips
+- Tag browsing sidebar with multi-select AND filtering and grouped-by-category display
+- `dirs.yaml` configuration for standardized directory paths
+- `migrate-paths` CLI command to convert absolute DB paths to relative
+- Portable library export (`backup.sh --export`) and restore (`restore.sh`)
+- Sphinx-based documentation (CLI reference, web UI guide, backup/restore, configuration)
+- "Docs" link in web UI nav bar; FastAPI static mount at `/docs`
 
 ### Changed
 
 - Rebranded from "Outline2PPT" to "AIPPT" — package, CLI, web UI, and all documentation
 - Package directory renamed from `outline2ppt/` to `aippt/`
 - CLI entry point renamed from `outline2ppt.py` to `aippt.py`
-- Removed legacy `ppt2outline.py` wrapper script
+- Database paths stored as relative paths for portability
+- LLM API endpoints return 403 in view-only mode
+
+## [2.1.0] - 2026-03-02 — Improve Pipeline, Notes Editing, Upload
 
 ### Added
 
-- `Dockerfile` for containerized deployment
-- `docker-compose.yml` with view-only (default) and full profiles
-- `.dockerignore` for efficient image builds
-- `AIPPT_VIEW_ONLY` environment variable for container-friendly view-only configuration
-- Library / view-only mode for the web UI (`--view-only` flag or auto-detected when no LLM config)
-- New `GET /api/config` endpoint exposing frontend configuration
-- LLM-dependent features visibly disabled with "LLM not configured" tooltips in view-only mode
-- "Library Mode" badge in nav bar when view-only is active
-- Web UI: Tag browsing sidebar for filtering slides by tag across all decks
-- Web UI: Sidebar toggle button in navigation bar with localStorage persistence
-- Web UI: Multi-select tag filtering with AND logic and grouped-by-category display
-- API: `GET /api/tags` endpoint returning all tags with slide counts and categories
-- `get_all_tags()` function in catalog module for querying tags with counts
-- `dirs.yaml` configuration file for standardized directory paths (outlines, templates, uploads, output, backups, images, database)
-- `aippt/config.py`: `load_dirs_config()`, `resolve_path()`, and `DirsConfigError` for directory configuration management
-- `dirs.yaml` auto-created with defaults on first run if it doesn't exist
-- `migrate-paths` CLI command to convert absolute DB paths to relative (idempotent)
-- `backup.sh --export` creates portable `tar.gz` archive in `backups/` with slides.db, images, uploads, dirs.yaml, and dbinfo.json
-- `restore.sh` imports an export archive and sets up a working library directory
-- Outline directives: `LAYOUT:` to specify slide layout type and `IMAGE:` to embed images directly from the outline
-- Author-specified layouts override LLM suggestions when using `--enhance`
-- Image paths resolved relative to the outline file's directory
-- New example outline: `examples/outline-with-directives.md`
-- Web UI: Next/prev navigation buttons in slide detail modal for sequential browsing
-- Web UI: Keyboard navigation (Left/Right arrow keys) in slide detail modal
-- Web UI: Slide position indicator ("3 of 15") in modal header
-- Reverse: `--enhance` flag for LLM-powered outline generation using multimodal AI
-- Reverse: `--model`, `--gateway-config`, `--images-dir` options for enhanced mode
-- Enhanced reverse describes diagrams and visual elements as structured bullet points instead of listing shape labels
-- Web UI: Create presentations from markdown outlines (paste text or upload .md file)
-- Web UI: Enhanced mode toggle for LLM-powered layout and speaker notes generation
-- Web UI: Model selector for enhanced mode generation
-- Web UI: SSE progress streaming during deck generation
-- Web UI: Template path configurable in Settings view
-- Default template configuration via `templates.yaml`
-- API: `POST /api/decks/create` SSE endpoint for outline-to-PPTX generation
-- API: `GET/PUT /api/templates` endpoints for template configuration
-- Reusable `create_deck()` function extracted from CLI for web endpoint reuse
-- `models.yaml` configuration file for per-operation default model selection
-- `aippt models` CLI command to view, set, and reset default models
-- Settings page in web UI for model configuration
-- `/api/models`, `/api/models/available`, and `/api/models/reset` API endpoints
-- Taxonomy management: `aippt tags` CLI commands to list, add, remove, import, export, and rename taxonomy tags
-- Per-slide tag management: `aippt tag` and `aippt untag` CLI commands
-- Tag removal in web UI slide detail dialog (click "x" on tag badge)
-- Taxonomy management section in web UI Settings page
-- Tag autocomplete from taxonomy in web UI
-- `/api/taxonomy` and `/api/slides/{id}/tags/{name}` API endpoints
-- Deck metadata: author, creation date, and modified date extracted from PPTX file properties during catalog
-- Slide metadata: author (inherited from deck) and creation date displayed in slide detail view
-- Web UI: Author and date columns in deck list table
-- Web UI: Metadata section in slide detail modal
-- CSV export: Author and date columns included
-- Web UI: Upload PowerPoint decks directly from the browser with automatic cataloging
-- Web UI: Download original `.pptx` files from the deck list
-- API: `POST /api/decks/upload` endpoint for deck upload and ingest
-- API: `GET /api/decks/{deck_id}/download` endpoint for deck download
-- CLI: `--uploads-dir` option for web server to configure upload storage location
-- Real-time per-step progress display when uploading decks in the web UI (SSE streaming)
-- Upload button disabled during processing to prevent duplicate uploads
-- API: `POST /api/decks/upload-stream` SSE endpoint for streaming ingest progress
-- Web UI: Editable speaker notes in slide detail modal with save/cancel controls
-- Web UI: Dirty-state indicator and unsaved-changes guard for notes editing
-- Web UI: Notes edit history panel showing previous versions with timestamps
-- Web UI: Ctrl+S / Cmd+S keyboard shortcut to save notes
-- API: `GET /api/slides/{id}/notes/history` endpoint
-- Database: Edit history tracking for notes changes (via `edit_history` table)
-- CLI: `aippt write-notes` command to write DB notes back to PPTX files
+- `aippt improve` command: AI-suggested improvements to slide source code
+- Web UI: editable speaker notes with save/cancel, dirty-state indicator, Ctrl+S shortcut, and edit history
+- `aippt write-notes` command to write DB notes back to PPTX files with automatic backup
 - Web UI: "Write Notes to Deck" button in deck list
-- API: `POST /api/decks/{id}/write-notes` endpoint with automatic backup
-- Automatic timestamped backup (`.pptx.bak`) before modifying PPTX files
+- Web UI: create presentations from markdown outlines (paste or upload .md)
+- Web UI: SSE progress streaming during deck generation
+- Web UI: upload PowerPoint decks with automatic cataloging and streaming progress
+- Web UI: download original `.pptx` files from deck list
+- Web UI: next/prev navigation and keyboard shortcuts in slide detail modal
+- Outline directives: `LAYOUT:` to specify slide layout, `IMAGE:` to embed images
+- `models.yaml` for per-operation default model selection; `aippt models` CLI command
+- Taxonomy management: `aippt tags` CLI commands (list, add, remove, import, export, rename)
+- Deck metadata extraction (author, dates) from PPTX core properties
+- Reverse: `--enhance` flag for LLM-powered multimodal outline generation
 
 ### Improved
 
-- Reverse: bullet hierarchy preserved using paragraph indentation levels
-- Reverse: multi-line titles joined with proper spacing
-- Reverse: "Default Section" header suppressed from output
-- Reverse: smarter title detection reduces "Untitled Slide" occurrences
-- Reverse: tables rendered as proper markdown tables
-- Reverse: decorative shapes (connectors, callout numbers, footers) filtered from output
-
-### Changed
-
-- LLM API endpoints return 403 in view-only mode instead of failing with cryptic errors
-- Upload endpoint silently suppresses `generate_tags` in view-only mode
-- Database paths (`file_path`, `image_path`) now stored as relative paths for portability
-- `catalog_deck()` accepts `base_dir` parameter for relative path computation
-- CLI commands (`serve`, `catalog`, `ingest`, `export-images`) read directory defaults from `dirs.yaml`
-- Web app resolves relative DB paths at serve time (backward-compatible with absolute paths)
-- `backup.sh` defaults backup location to `backups/` directory (export mode)
-- `POST /api/slides/{id}/notes/save` now records previous value in edit history before overwriting
-- `POST /api/slides/{id}/notes/save` now updates `updated_at` timestamp
-- AI-generated notes saves now recorded with `source: 'ai'` in edit history
-- `GET /api/decks/{id}/download` now applies DB notes to the downloaded file (original untouched)
-- `analyze --mode tags` now uses the database taxonomy table when no `--taxonomy` CSV is provided
-- `catalog_deck()` now reads PPTX `core_properties` for metadata extraction
-- Database schema updated with new columns (backward-compatible with defaults)
+- Reverse: bullet hierarchy, multi-line titles, table rendering, decorative shape filtering
 
 ### Fixed
 
-- Deck names in the web UI no longer show the internal UUID prefix from uploaded files
-- Downloaded deck files now use the original filename instead of the UUID-prefixed name
-- Reverse round-trip: speaker notes no longer leak into slide body when reversed markdown is used with `create`
-- Reverse: analysis artifacts (`[Note: analysis based on slide text only...]`) stripped from speaker notes
-- Reverse: notes now emitted as HTML comments (`<!-- notes ... -->`) instead of `*Notes:*` bullet lists
-- New `--strip-notes` flag on `reverse` command to omit speaker notes entirely
+- Reverse round-trip: speaker notes no longer leak into slide body
+- Reverse: analysis artifacts stripped from notes; notes emitted as HTML comments
+- Deck names no longer show UUID prefix; downloads use original filename
 
 ## [2.0.0] - 2026-02-20
 
@@ -188,6 +218,15 @@ Complete rewrite from standalone scripts into a modular Python package with cata
   - Recursive shape text extraction (groups, tables)
   - Optional speaker notes inclusion
 
-[unreleased]: https://github.com/shamsway/aippt/compare/v2.0.0...HEAD
+[unreleased]: https://github.com/shamsway/aippt/compare/v3.3.0...HEAD
+[3.3.0]: https://github.com/shamsway/aippt/compare/v3.2.0...v3.3.0
+[3.2.0]: https://github.com/shamsway/aippt/compare/v3.1.0...v3.2.0
+[3.1.0]: https://github.com/shamsway/aippt/compare/v3.0.0...v3.1.0
+[3.0.0]: https://github.com/shamsway/aippt/compare/v2.5.0...v3.0.0
+[2.5.0]: https://github.com/shamsway/aippt/compare/v2.4.0...v2.5.0
+[2.4.0]: https://github.com/shamsway/aippt/compare/v2.3.0...v2.4.0
+[2.3.0]: https://github.com/shamsway/aippt/compare/v2.2.0...v2.3.0
+[2.2.0]: https://github.com/shamsway/aippt/compare/v2.1.0...v2.2.0
+[2.1.0]: https://github.com/shamsway/aippt/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/shamsway/aippt/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/shamsway/aippt/releases/tag/v1.0.0
