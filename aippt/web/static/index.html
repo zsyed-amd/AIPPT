@@ -1,11 +1,132 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en">
 <head>
+    <script>
+        (function () {
+            var saved = localStorage.getItem('aippt_theme');
+            var isLight = saved === 'light';
+            document.documentElement.classList.add(isLight ? 'theme-amd-light' : 'dark');
+            document.documentElement.setAttribute('data-theme', isLight ? 'light' : 'dark');
+        })();
+    </script>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AIPPT</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <link rel="stylesheet" href="/static/vendor/pico.min.css">
+    <link rel="stylesheet" href="/static/tokens.css">
+    <link rel="stylesheet" href="/static/pico-overrides.css">
     <style>
+        /* ── Vendored fonts ─────────────────────────────────── */
+        @font-face {
+            font-family: 'Klavika';
+            src: url('/static/fonts/Klavika-Light.woff2') format('woff2');
+            font-weight: 300;
+            font-style: normal;
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'Klavika';
+            src: url('/static/fonts/Klavika-Regular.woff2') format('woff2');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'Klavika';
+            src: url('/static/fonts/Klavika-Medium.woff2') format('woff2');
+            font-weight: 500;
+            font-style: normal;
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'Klavika';
+            src: url('/static/fonts/Klavika-Bold.woff2') format('woff2');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'DM Sans';
+            src: url('/static/fonts/DMSans-Regular.woff2') format('woff2');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'DM Sans';
+            src: url('/static/fonts/DMSans-Medium.woff2') format('woff2');
+            font-weight: 500;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        /* ── Signature utilities ────────────────────────────── */
+        .glow-line {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            opacity: 0.3;
+            margin: var(--space-md, 1rem) 0;
+        }
+        .theme-amd-light .glow-line { opacity: 0.55; }
+
+        .tool-card {
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .tool-card:hover {
+            border-color: var(--accent) !important;
+            box-shadow: 0 12px 40px rgba(0, 194, 222, 0.12);
+        }
+        .theme-amd-light .tool-card:hover {
+            box-shadow: 0 12px 40px rgba(0, 194, 222, 0.22);
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-sm, 0.5rem);
+            font-family: var(--font-heading);
+            font-size: var(--eyebrow-size);
+            font-weight: 600;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--accent);
+        }
+        .eyebrow::before {
+            content: "";
+            display: inline-block;
+            width: 1.5rem;
+            height: 2px;
+            background: var(--accent);
+        }
+
+        .stat-number {
+            font-family: var(--font-heading);
+            font-variant-numeric: tabular-nums;
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        body {
+            background-image: radial-gradient(circle, rgba(0, 194, 222, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+            background-attachment: fixed;
+        }
+        .theme-amd-light body {
+            background-image: radial-gradient(circle, rgba(0, 125, 184, 0.06) 1px, transparent 1px);
+        }
+
+        .no-transitions,
+        .no-transitions *,
+        .no-transitions *::before,
+        .no-transitions *::after {
+            transition: none !important;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .tool-card { transition: none; }
+            .tool-card:hover { box-shadow: none; }
+        }
+
         :root {
             --pico-font-size: 16px;
         }
@@ -16,15 +137,21 @@
             gap: 1rem;
         }
         .slide-card {
+            background: var(--bg-card);
+            color: var(--text-primary);
             border: 1px solid var(--pico-muted-border-color);
             border-radius: var(--pico-border-radius);
             overflow: hidden;
             cursor: pointer;
-            transition: box-shadow 0.2s;
+            transition: border-color 0.2s, box-shadow 0.2s;
             outline-offset: 2px;
         }
         .slide-card:hover {
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            border-color: var(--accent);
+            box-shadow: 0 12px 40px rgba(0, 194, 222, 0.12);
+        }
+        .theme-amd-light .slide-card:hover {
+            box-shadow: 0 12px 40px rgba(0, 194, 222, 0.22);
         }
         .slide-card img {
             width: 100%;
@@ -212,9 +339,9 @@
             width: 16px;
             height: 16px;
             border: 2px solid var(--pico-muted-border-color);
-            border-top-color: var(--pico-primary);
+            border-top-color: var(--accent);
             border-radius: 50%;
-            animation: spin 0.8s linear infinite;
+            animation: spin var(--duration-normal, 0.4s) linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
         .upload-progress {
@@ -434,6 +561,13 @@
             <li><a href="#" onclick="showSettings(); return false;">Settings</a></li>
             <li><a href="/docs/index.html" target="_blank">Docs</a></li>
             <li><a href="/api/export" target="_blank" role="button" class="outline">Export CSV</a></li>
+            <li>
+                <button id="theme-toggle" type="button" class="contrast outline"
+                        onclick="toggleTheme()" title="Toggle light/dark theme"
+                        aria-label="Toggle light/dark theme">
+                    <span aria-hidden="true">🌓</span>
+                </button>
+            </li>
         </ul>
     </nav>
 
@@ -454,7 +588,10 @@
         <!-- Deck list view -->
         <section id="deck-list">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-                <h2 style="margin:0;">Cataloged Decks</h2>
+                <div>
+                    <span class="eyebrow" style="margin-bottom:0.25rem;">Library</span>
+                    <h2 style="margin:0;">Cataloged Decks</h2>
+                </div>
                 <div style="display:flex; align-items:center; gap:0.75rem;">
                     <label style="margin:0; font-size:0.85rem; display:flex; align-items:center; gap:0.35rem; cursor:pointer;">
                         <input type="checkbox" id="deck-generate-tags" style="margin:0;">
@@ -567,6 +704,7 @@
 
         <!-- Search view -->
         <section id="search-view" style="display:none;">
+            <span class="eyebrow" style="margin-bottom:0.25rem;">Discover</span>
             <h2>Search Slides</h2>
             <form onsubmit="event.preventDefault(); doSearch();">
                 <div class="grid">
@@ -820,7 +958,7 @@
             tbody.innerHTML = decks.map(d => `
                 <tr style="cursor:pointer" onclick="browseDeck(${d.id}, '${escAttr(d.display_name || d.name)}')">
                     <td><strong>${esc(d.display_name || d.name)}</strong></td>
-                    <td>${d.slide_count}</td>
+                    <td><span class="stat-number">${d.slide_count}</span></td>
                     <td>${esc(d.author || '')}</td>
                     <td>${fmtDate(d.created_date || d.cataloged_at)}</td>
                     <td>${fmtDate(d.updated_at)}</td>
@@ -1919,6 +2057,21 @@
             showDecks();
         });
         loadTaxonomyTags();
+
+        function toggleTheme() {
+            var html = document.documentElement;
+            var goingLight = html.classList.contains('dark');
+            html.classList.add('no-transitions');
+            html.classList.toggle('dark', !goingLight);
+            html.classList.toggle('theme-amd-light', goingLight);
+            html.setAttribute('data-theme', goingLight ? 'light' : 'dark');
+            localStorage.setItem('aippt_theme', goingLight ? 'light' : 'dark');
+            requestAnimationFrame(function () {
+                requestAnimationFrame(function () {
+                    html.classList.remove('no-transitions');
+                });
+            });
+        }
     </script>
 </body>
 </html>

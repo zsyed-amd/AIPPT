@@ -1,0 +1,61 @@
+/*
+ * Pico ↔ Instinct bridge
+ *
+ * Maps Pico CSS custom properties onto Instinct design tokens, so Pico's
+ * built-in components (buttons, forms, dialogs, disclosures) automatically
+ * pick up the Instinct color palette and typography without rewriting Pico's
+ * component CSS or losing its accessibility behavior.
+ *
+ * Load order: pico.min.css → tokens.css → pico-overrides.css → inline styles.
+ */
+
+/*
+ * Specificity note: Pico v2 sets per-theme variables under
+ * [data-theme=dark] / [data-theme=light] / :root:not([data-theme=dark])
+ * — all (0,2,0). Plain :root (0,1,0) loses. We use :root.dark and
+ * :root.theme-amd-light (also 0,2,0) and rely on source order winning.
+ */
+:root.dark,
+:root.theme-amd-light {
+    /* ── Color mapping ──────────────────────────────────── */
+    --pico-primary: var(--accent);
+    --pico-primary-background: var(--accent);
+    --pico-primary-hover: var(--accent);
+    --pico-primary-inverse: var(--color-primary-foreground);
+    --pico-background-color: var(--bg-primary);
+    --pico-card-background-color: var(--bg-card);
+    --pico-card-sectioning-background-color: var(--bg-card);
+    --pico-color: var(--text-primary);
+    --pico-muted-color: var(--text-secondary);
+    --pico-muted-border-color: var(--border-subtle);
+    --pico-form-element-background-color: var(--bg-card);
+    --pico-form-element-border-color: var(--border-subtle);
+    --pico-form-element-focus-color: var(--accent);
+
+    /* ── Typography ─────────────────────────────────────── */
+    --pico-font-family-sans-serif: var(--font-sans);
+    --pico-font-family: var(--font-sans);
+    --pico-font-size: var(--body-size);
+    --pico-line-height: 1.55;
+
+    /* ── Headings ───────────────────────────────────────── */
+    --pico-h1-color: var(--text-primary);
+    --pico-h2-color: var(--text-primary);
+    --pico-h3-color: var(--text-primary);
+
+    /* ── Shape ──────────────────────────────────────────── */
+    --pico-border-radius: var(--radius-md);
+
+    /* ── Motion ─────────────────────────────────────────── */
+    --pico-transition: var(--duration-fast) var(--ease-in-out);
+}
+
+/* Headings get Klavika via element selector — Pico has no font-family-heading var */
+h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+}
+
+/* Modal (dialog) elevation — L3 surface */
+dialog article {
+    background: var(--bg-modal);
+}

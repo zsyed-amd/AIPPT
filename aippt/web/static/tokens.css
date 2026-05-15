@@ -1,0 +1,170 @@
+/*
+ * AMD Instinct Design Tokens — CSS Custom Properties
+ *
+ * Extracted from DESIGN.md frontmatter. Import this file or copy the
+ * :root block into any HTML/CSS project that needs AMD Instinct styling.
+ *
+ * Source: ~/git/amd-instinct-design/DESIGN.md
+ */
+
+:root {
+    /* ═══════════════════════════════════════════
+       COLORS — AMD PPTX + Daedalus Portal
+       ═══════════════════════════════════════════ */
+
+    /* AMD corporate palette (from PPTX theme XML) */
+    --amd-pure-black: #000000;
+    --amd-white: #FFFFFF;
+    --amd-gold: #C1A968;
+    --amd-orange: #F26522;
+    --amd-red: #ED1C24;
+    --amd-teal: #00C2DE;
+
+    /* Daedalus design tokens (source of truth for surfaces) */
+    --color-primary: #00C2DE;
+    --color-primary-foreground: #131416;
+    --color-secondary: #007DB8;
+    --color-background: #131416;
+    --color-foreground: #eaebec;
+    --color-muted: #27272a;
+    --color-muted-foreground: #b4b9bc;
+    --color-accent: #1d1f21;
+    --color-border: #656b72;
+    --color-border-alt: #222426;
+    --color-border-alt-light: #c2ccd7;
+
+    /* Card surfaces */
+    --color-card: #131416;
+    --color-card-light: #eaebec;
+
+    /* Light-mode semantic pairs (used by .theme-amd-light or :root:not(.dark)) */
+    --color-background-light: #eaebec;
+    --color-foreground-light: #131416;
+    --color-muted-light: #b4b9bc;
+    --color-muted-foreground-light: #27272a;
+    --color-accent-light: #fafafa;
+    --color-accent-foreground: #fafafa;
+
+    /* Neutrals */
+    --color-gray-dark: #5E5E5E;
+    --color-gray-mid: #636466;
+    --color-gray-light: #9D9FA2;
+
+    /* Data visualization */
+    --data-amd: #ED1C24;
+    --data-competitor: #76B900;
+    --data-secondary-amd: #008CA0;
+    --data-competitor-muted: #9D9FA2;
+    --data-positive: #1AA01A;
+    --data-negative: #D73D2B;
+    --data-warning: #F59E0B;
+
+    /* ═══════════════════════════════════════════
+       SEMANTIC THEME ALIASES (dark mode default)
+       ═══════════════════════════════════════════ */
+    --bg-primary: var(--color-background);
+    --bg-secondary: var(--color-accent);
+    --bg-card: var(--color-accent);
+    --text-primary: var(--color-foreground);
+    --text-secondary: var(--color-muted-foreground);
+    --accent: var(--color-primary);
+    --accent-warm: var(--amd-orange);
+    --border-subtle: var(--color-border-alt);
+    --rule: rgba(255, 255, 255, 0.08);
+
+    /* ═══════════════════════════════════════════
+       TYPOGRAPHY
+       ═══════════════════════════════════════════ */
+    --font-heading: 'Klavika', 'DM Sans', 'Inter', system-ui, sans-serif;
+    --font-display: 'Klavika', 'Inter', system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+    --font-sans: 'DM Sans', system-ui, sans-serif;  /* Daedalus portal body */
+    --font-code: 'Consolas', 'Monaco', 'Courier New', monospace;
+
+    --title-size: clamp(1.75rem, 5.5vw, 5rem);
+    --hero-size: clamp(2.5rem, 8vw, 6.5rem);
+    --h1-size: clamp(1.75rem, 4.5vw, 3.75rem);
+    --h2-size: clamp(1.25rem, 3vw, 2.25rem);
+    --h3-size: clamp(1rem, 2vw, 1.5rem);
+    --body-size: clamp(0.9rem, 1.4vw, 1.125rem);
+    --small-size: clamp(0.7rem, 0.95vw, 0.85rem);
+    --eyebrow-size: clamp(0.65rem, 0.85vw, 0.8rem);
+    --stat-size: clamp(4rem, 14vw, 12rem);
+
+    /* PPTX-specific sizes (fixed pt, not responsive) */
+    --pptx-body-size: 16px;
+    --pptx-bullet-l0-size: 20px;
+    --pptx-bullet-l1-size: 18px;
+
+    /* ═══════════════════════════════════════════
+       SPACING (8px base grid)
+       ═══════════════════════════════════════════ */
+    --space-xs: 4px;
+    --space-sm: 8px;
+    --space-md: 16px;
+    --space-lg: 32px;
+    --space-xl: 64px;
+    --slide-padding: clamp(2rem, 5vw, 5rem);
+    --content-gap: clamp(0.75rem, 2vw, 2rem);
+    --element-gap: clamp(0.4rem, 1vw, 1rem);
+
+    /* ═══════════════════════════════════════════
+       RADII
+       ═══════════════════════════════════════════ */
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 10px;
+    --radius-xl: 14px;
+    --radius-full: 9999px;
+
+    /* ═══════════════════════════════════════════
+       MOTION
+       ═══════════════════════════════════════════ */
+    --duration-fast: 200ms;
+    --duration-normal: 400ms;
+    --duration-slow: 600ms;
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ═══════════════════════════════════════════
+   LIGHT THEME OVERRIDES
+   ═══════════════════════════════════════════ */
+.theme-amd-light {
+    --bg-primary: #eaebec;
+    --bg-secondary: #FFFFFF;
+    --bg-card: #FFFFFF;
+    --text-primary: #131416;
+    --text-secondary: #5E5E5E;
+    --border-subtle: #c2ccd7;
+    --rule: rgba(19, 20, 22, 0.08);
+}
+
+
+/* ═══════════════════════════════════════════
+   AIPPT-specific overrides
+   Source PRD: .local-docs/plans/2026-05-05-instinct-design-web-ui.md
+   ═══════════════════════════════════════════ */
+
+:root {
+    /* Level 3 surface (modals) — not in upstream tokens.css */
+    --bg-modal: #2d3449;
+
+    /* Body font stack uses DM Sans (Daedalus portal pattern) */
+    --font-sans: 'DM Sans', system-ui, -apple-system, 'Helvetica Neue', sans-serif;
+
+    /* Fixed-px typography for tool UI (override clamp() from upstream).
+       Sidebar collapse must not change body text size. */
+    --body-size: 15px;
+    --small-size: 13px;
+    --h1-size: 28px;
+    --h2-size: 22px;
+    --h3-size: 17px;
+    --eyebrow-size: 11px;
+
+    /* clamp() retained for hero contexts (used by future Live Preview / stat cards):
+       --hero-size, --stat-size unchanged from upstream */
+}
+
+.theme-amd-light {
+    --bg-modal: #ffffff;
+}

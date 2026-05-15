@@ -15,6 +15,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Two-column layout alignment improved for density-aware content distribution
 
+## [3.4.0] - 2026-05-15 — AMD Instinct Design System Web UI
+
+### Added
+
+- AMD Instinct design tokens (`tokens.css`) wired into web UI — four surface levels (L0–L3), teal accent `#00C2DE`, semantic text and border aliases
+- Klavika font family (Light/Regular/Medium/Bold) vendored as woff2 — headings in web UI now use the AMD Instinct typeface
+- DM Sans (Regular/Medium) vendored as woff2 — body text matches Daedalus portal convention
+- Pico CSS → Instinct token bridge (`pico-overrides.css`) — Pico components (buttons, forms, dialogs) automatically pick up Instinct palette without rewriting Pico's component CSS
+- FOUC-prevention head script — reads `localStorage.aippt_theme` and applies `.dark` or `.theme-amd-light` class before first paint
+- Theme toggle button (🌓) in nav bar with `localStorage` persistence and `prefers-reduced-motion`-aware transition suppression
+- Signature utility CSS classes: `.glow-line` (teal accent rule), `.tool-card` (hover card with glow shadow), `.eyebrow` (labelled section heading with teal bar), `.stat-number` (Klavika tabular teal numerals)
+- Dot-grid background pattern (40 px radial dots at 5 % teal opacity, fixed attachment, light-mode variant)
+- Eyebrow labels on "Cataloged Decks" (Library) and "Search Slides" (Discover) section headers
+- Teal `.stat-number` styling on deck slide-count column
+- Teal spinner accent (`border-top-color: var(--accent)`) with motion-token duration
+- Visual baseline screenshots — pre- and post-Instinct (9 views × 2 themes = 18 PNGs each) in `tests/visual-baselines/`
+
+### Fixed
+
+- `role="button"` on `.slide-card` elements caused Pico to apply primary (teal) button background; fixed by adding explicit `background: var(--bg-card); color: var(--text-primary)` to `.slide-card`
+- Pico v2 specificity collision: `--pico-background-color` was not overridden by plain `:root` (0,1,0) because Pico's `[data-theme]` rules win at (0,2,0); resolved by using `:root.dark, :root.theme-amd-light` selectors in `pico-overrides.css`
+
+### Changed
+
+- `<html>` element no longer carries a hard-coded `data-theme` attribute — theme is now applied exclusively by the FOUC head script from `localStorage`
+
 ## [3.3.0] - 2026-05-06 — Theme Token Schema v2
 
 ### Added
