@@ -293,6 +293,7 @@ class TestUploadStream:
             "/api/decks/upload-stream",
             files={"file": (filename, buf, PPTX_MIME)},
             data=data,
+            headers=_TEST_AUTH,
         )
 
     @patch("aippt.ingest.cmd_export_images", return_value=1)
@@ -369,3 +370,33 @@ class TestUploadStream:
         assert response.status_code == 400, response.text
         data = response.json()
         assert "error" in data
+
+    def test_stream_without_bearer_returns_401(self, client):
+        """Missing Bearer token must return 401 JSON (not SSE)."""
+        buf = make_pptx(num_slides=1)
+        response = client.post(
+            "/api/decks/upload-stream",
+            files={"file": ("deck.pptx", buf, PPTX_MIME)},
+        )
+
+        assert response.status_code == 401, response.text
+        data = response.json()
+        assert "sign-in" in data["error"].lower() or "microsoft" in data["error"].lower()
+
+    def test_stream_in_view_only_returns_403(self, tmp_path):
+        """View-only deployments must block the SSE upload endpoint with 403."""
+        db_path = str(tmp_path / "test.db")
+        uploads_dir = str(tmp_path / "uploads")
+        app = create_app(db_path=db_path, uploads_dir=uploads_dir, view_only=True)
+        view_only_client = TestClient(app)
+
+        buf = make_pptx(num_slides=1)
+        response = view_only_client.post(
+            "/api/decks/upload-stream",
+            files={"file": ("deck.pptx", buf, PPTX_MIME)},
+            headers=_TEST_AUTH,
+        )
+
+        assert response.status_code == 403, response.text
+        data = response.json()
+        assert "view-only" in data["error"].lower()

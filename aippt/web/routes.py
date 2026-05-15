@@ -1048,6 +1048,22 @@ async def upload_deck_stream(
     if not file.filename or not file.filename.lower().endswith('.pptx'):
         return JSONResponse({'error': 'Only .pptx files are supported'}, status_code=400)
 
+    # Same gates as /api/decks/upload — view-only blocks ingest entirely, and
+    # the Linux Graph render path requires a per-user MS token from the browser.
+    if getattr(request.app.state, "view_only", False):
+        return JSONResponse(
+            {"error": "Deck ingest is disabled in view-only mode"},
+            status_code=403,
+        )
+
+    ms_token = _extract_bearer_token(request)
+    if not ms_token:
+        return JSONResponse(
+            {"error": "Microsoft sign-in required for ingest. "
+                      "Sign in with the Microsoft button and retry."},
+            status_code=401,
+        )
+
     db_path = request.app.state.db_path
     uploads_dir = request.app.state.uploads_dir
     gateway_config = request.app.state.gateway_config
@@ -1099,6 +1115,7 @@ async def upload_deck_stream(
                 gateway_config=gateway_config,
                 require_images=False,
                 progress_callback=progress_callback,
+                ms_token=ms_token,
             ),
         )
 

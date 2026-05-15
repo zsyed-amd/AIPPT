@@ -561,6 +561,12 @@
             <li><a href="#" onclick="showSettings(); return false;">Settings</a></li>
             <li><a href="/docs/index.html" target="_blank">Docs</a></li>
             <li><a href="/api/export" target="_blank" role="button" class="outline">Export CSV</a></li>
+            <li id="ms-signin-nav-item" style="display:none;">
+                <button id="ms-signin-btn" type="button" class="outline" onclick="onMsSignInClick()" title="Sign in to Microsoft to enable deck ingest">Sign in to Microsoft</button>
+            </li>
+            <li id="ms-signout-nav-item" style="display:none;">
+                <button id="ms-signout-btn" type="button" class="outline secondary" onclick="onMsSignOutClick()" title="Sign out of Microsoft">Sign out</button>
+            </li>
             <li>
                 <button id="theme-toggle" type="button" class="contrast outline"
                         onclick="toggleTheme()" title="Toggle light/dark theme"
@@ -599,6 +605,7 @@
                     </label>
                     <button id="deck-upload-btn" class="outline" onclick="document.getElementById('deck-upload-file').click()">Upload Deck</button>
                     <input type="file" id="deck-upload-file" accept=".pptx" style="display:none;" onchange="uploadDeck(this)">
+                    <button id="deck-upload-signin-btn" class="contrast" style="display:none;" onclick="msAuth.signIn()" title="Microsoft sign-in is required to upload decks">Sign in to upload</button>
                 </div>
             </div>
             <details class="create-panel" id="create-panel">
@@ -853,6 +860,7 @@
         <div id="toast"></div>
     </main>
 
+    <script src="/static/js/ms-auth.js"></script>
     <script>
         let currentSlideId = null;
         let savedNotesValue = '';
@@ -1350,7 +1358,7 @@
             if (generateTags) formData.append('generate_tags', 'true');
 
             try {
-                const resp = await fetch('/api/decks/upload-stream', {method: 'POST', body: formData});
+                const resp = await msAuth.fetchWithAuth('/api/decks/upload-stream', {method: 'POST', body: formData});
 
                 if (!resp.ok) {
                     const data = await resp.json();
@@ -2048,12 +2056,61 @@
             }
         }
 
+        // --- Microsoft sign-in UI wiring (PRD A) ---
+        // The Linux Graph render path needs a per-user MS token. Hide the
+        // sign-in/out controls in view-only deployments since deck ingest is
+        // disabled there entirely.
+
+        function onMsSignInClick() {
+            msAuth.signIn();
+        }
+
+        function onMsSignOutClick() {
+            msAuth.signOut();
+        }
+
+        function applyMsAuthState(signedIn) {
+            // Nav buttons: show sign-in OR sign-out (or neither in view-only).
+            const signinNav  = document.getElementById('ms-signin-nav-item');
+            const signoutNav = document.getElementById('ms-signout-nav-item');
+            if (viewOnly) {
+                signinNav.style.display  = 'none';
+                signoutNav.style.display = 'none';
+            } else {
+                signinNav.style.display  = signedIn ? 'none' : '';
+                signoutNav.style.display = signedIn ? '' : 'none';
+            }
+
+            // Deck upload row: swap real Upload button for a sign-in CTA when
+            // not signed in (and not in view-only, where the whole row is
+            // a non-op).
+            const uploadBtn       = document.getElementById('deck-upload-btn');
+            const uploadInput     = document.getElementById('deck-upload-file');
+            const uploadSigninCta = document.getElementById('deck-upload-signin-btn');
+            if (viewOnly) {
+                // View-only handled elsewhere; leave Upload visible-but-noop.
+                uploadSigninCta.style.display = 'none';
+                return;
+            }
+            if (signedIn) {
+                uploadBtn.style.display       = '';
+                uploadSigninCta.style.display = 'none';
+                uploadBtn.disabled            = false;
+            } else {
+                uploadBtn.style.display       = 'none';
+                uploadSigninCta.style.display = '';
+            }
+        }
+
         // Load config, decks, sidebar, and taxonomy on page load
         fetchConfig().then(() => {
             initNtid();
             showNtidInput();
             applySidebarState();
             if (sidebarOpen) loadSidebarTags();
+            // Register the MS auth state listener AFTER fetchConfig so viewOnly
+            // is known; the listener fires once on registration to sync UI.
+            msAuth.onStateChange(applyMsAuthState);
             showDecks();
         });
         loadTaxonomyTags();
