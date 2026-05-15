@@ -124,11 +124,15 @@
             border-radius: var(--pico-border-radius);
             overflow: hidden;
             cursor: pointer;
-            transition: box-shadow 0.2s;
+            transition: border-color 0.2s, box-shadow 0.2s;
             outline-offset: 2px;
         }
         .slide-card:hover {
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            border-color: var(--accent);
+            box-shadow: 0 12px 40px rgba(0, 194, 222, 0.12);
+        }
+        .theme-amd-light .slide-card:hover {
+            box-shadow: 0 12px 40px rgba(0, 194, 222, 0.22);
         }
         .slide-card img {
             width: 100%;
