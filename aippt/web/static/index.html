@@ -486,6 +486,13 @@
             <li><a href="#" onclick="showSettings(); return false;">Settings</a></li>
             <li><a href="/docs/index.html" target="_blank">Docs</a></li>
             <li><a href="/api/export" target="_blank" role="button" class="outline">Export CSV</a></li>
+            <li>
+                <button id="theme-toggle" type="button" class="contrast outline"
+                        onclick="toggleTheme()" title="Toggle light/dark theme"
+                        aria-label="Toggle light/dark theme">
+                    <span aria-hidden="true">🌓</span>
+                </button>
+            </li>
         </ul>
     </nav>
 
@@ -1971,6 +1978,20 @@
             showDecks();
         });
         loadTaxonomyTags();
+
+        function toggleTheme() {
+            var html = document.documentElement;
+            var goingLight = html.classList.contains('dark');
+            html.classList.add('no-transitions');
+            html.classList.toggle('dark', !goingLight);
+            html.classList.toggle('theme-amd-light', goingLight);
+            localStorage.setItem('aippt_theme', goingLight ? 'light' : 'dark');
+            requestAnimationFrame(function () {
+                requestAnimationFrame(function () {
+                    html.classList.remove('no-transitions');
+                });
+            });
+        }
     </script>
 </body>
 </html>
