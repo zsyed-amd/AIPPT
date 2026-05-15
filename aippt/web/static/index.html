@@ -58,6 +58,58 @@
             font-style: normal;
             font-display: swap;
         }
+
+        /* ── Signature utilities ────────────────────────────── */
+        .glow-line {
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            opacity: 0.3;
+            margin: var(--space-md, 1rem) 0;
+        }
+        .theme-amd-light .glow-line { opacity: 0.55; }
+
+        .tool-card {
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .tool-card:hover {
+            border-color: var(--accent) !important;
+            box-shadow: 0 12px 40px rgba(0, 194, 222, 0.12);
+        }
+        .theme-amd-light .tool-card:hover {
+            box-shadow: 0 12px 40px rgba(0, 194, 222, 0.22);
+        }
+
+        .eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-sm, 0.5rem);
+            font-family: var(--font-heading);
+            font-size: var(--eyebrow-size);
+            font-weight: 600;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--accent);
+        }
+        .eyebrow::before {
+            content: "";
+            display: inline-block;
+            width: 1.5rem;
+            height: 2px;
+            background: var(--accent);
+        }
+
+        .no-transitions,
+        .no-transitions *,
+        .no-transitions *::before,
+        .no-transitions *::after {
+            transition: none !important;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .tool-card { transition: none; }
+            .tool-card:hover { box-shadow: none; }
+        }
+
         :root {
             --pico-font-size: 16px;
         }
