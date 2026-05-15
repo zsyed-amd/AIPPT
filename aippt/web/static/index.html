@@ -99,6 +99,22 @@
             background: var(--accent);
         }
 
+        .stat-number {
+            font-family: var(--font-heading);
+            font-variant-numeric: tabular-nums;
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        body {
+            background-image: radial-gradient(circle, rgba(0, 194, 222, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+            background-attachment: fixed;
+        }
+        .theme-amd-light body {
+            background-image: radial-gradient(circle, rgba(0, 125, 184, 0.06) 1px, transparent 1px);
+        }
+
         .no-transitions,
         .no-transitions *,
         .no-transitions *::before,
@@ -323,9 +339,9 @@
             width: 16px;
             height: 16px;
             border: 2px solid var(--pico-muted-border-color);
-            border-top-color: var(--pico-primary);
+            border-top-color: var(--accent);
             border-radius: 50%;
-            animation: spin 0.8s linear infinite;
+            animation: spin var(--duration-normal, 0.4s) linear infinite;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
         .upload-progress {
@@ -572,7 +588,10 @@
         <!-- Deck list view -->
         <section id="deck-list">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
-                <h2 style="margin:0;">Cataloged Decks</h2>
+                <div>
+                    <span class="eyebrow" style="margin-bottom:0.25rem;">Library</span>
+                    <h2 style="margin:0;">Cataloged Decks</h2>
+                </div>
                 <div style="display:flex; align-items:center; gap:0.75rem;">
                     <label style="margin:0; font-size:0.85rem; display:flex; align-items:center; gap:0.35rem; cursor:pointer;">
                         <input type="checkbox" id="deck-generate-tags" style="margin:0;">
@@ -685,6 +704,7 @@
 
         <!-- Search view -->
         <section id="search-view" style="display:none;">
+            <span class="eyebrow" style="margin-bottom:0.25rem;">Discover</span>
             <h2>Search Slides</h2>
             <form onsubmit="event.preventDefault(); doSearch();">
                 <div class="grid">
@@ -938,7 +958,7 @@
             tbody.innerHTML = decks.map(d => `
                 <tr style="cursor:pointer" onclick="browseDeck(${d.id}, '${escAttr(d.display_name || d.name)}')">
                     <td><strong>${esc(d.display_name || d.name)}</strong></td>
-                    <td>${d.slide_count}</td>
+                    <td><span class="stat-number">${d.slide_count}</span></td>
                     <td>${esc(d.author || '')}</td>
                     <td>${fmtDate(d.created_date || d.cataloged_at)}</td>
                     <td>${fmtDate(d.updated_at)}</td>
