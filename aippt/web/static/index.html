@@ -5,7 +5,52 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AIPPT</title>
     <link rel="stylesheet" href="/static/vendor/pico.min.css">
+    <link rel="stylesheet" href="/static/tokens.css">
+    <link rel="stylesheet" href="/static/pico-overrides.css">
     <style>
+        /* ── Vendored fonts ─────────────────────────────────── */
+        @font-face {
+            font-family: 'Klavika';
+            src: url('/static/fonts/Klavika-Light.woff2') format('woff2');
+            font-weight: 300;
+            font-style: normal;
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'Klavika';
+            src: url('/static/fonts/Klavika-Regular.woff2') format('woff2');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'Klavika';
+            src: url('/static/fonts/Klavika-Medium.woff2') format('woff2');
+            font-weight: 500;
+            font-style: normal;
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'Klavika';
+            src: url('/static/fonts/Klavika-Bold.woff2') format('woff2');
+            font-weight: 700;
+            font-style: normal;
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'DM Sans';
+            src: url('/static/fonts/DMSans-Regular.woff2') format('woff2');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+        @font-face {
+            font-family: 'DM Sans';
+            src: url('/static/fonts/DMSans-Medium.woff2') format('woff2');
+            font-weight: 500;
+            font-style: normal;
+            font-display: swap;
+        }
         :root {
             --pico-font-size: 16px;
         }
