@@ -110,17 +110,18 @@ class TestViewOnlyAllowedEndpoints:
         assert resp.status_code == 200
         assert len(resp.json()) >= 1
 
-    def test_upload_works_view_only(self, view_only_client, deck_path):
+    def test_upload_blocked_view_only(self, view_only_client, deck_path):
+        # Per PRD A: deck ingest now requires Microsoft sign-in for the
+        # Linux Graph render path, so view-only deployments cannot ingest.
         with open(deck_path, "rb") as f:
             resp = view_only_client.post(
                 "/api/decks/upload",
                 files={"file": ("upload.pptx", f, "application/octet-stream")},
-                data={"generate_tags": "true"},  # should be silently suppressed
+                data={"generate_tags": "true"},
+                headers={"Authorization": "Bearer tok"},
             )
-        assert resp.status_code == 200
-        data = resp.json()
-        # Tags should NOT be generated even though generate_tags was true
-        assert data["tags_generated"] is False
+        assert resp.status_code == 403
+        assert "view-only" in resp.json()["error"].lower()
 
 
 # ---------------------------------------------------------------------------

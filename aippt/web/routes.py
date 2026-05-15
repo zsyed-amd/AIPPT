@@ -31,6 +31,8 @@ from aippt.catalog import (
     record_edit,
 )
 from aippt.export import export_csv
+from aippt import graph
+from aippt.ingest import ingest_deck
 
 router = APIRouter()
 STATIC_DIR = Path(__file__).parent / "static"
@@ -668,6 +670,84 @@ async def serve_slide_image(slide_id: int, request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Microsoft Graph device-code auth endpoints
+#
+# These are unauthenticated and ignore view-only mode -- they ARE the auth
+# path. Tokens are returned to the browser, which holds them in localStorage
+# and forwards them as Authorization: Bearer on subsequent calls.
+# ---------------------------------------------------------------------------
+
+
+def _extract_bearer_token(request: Request) -> str:
+    """Return the bearer token from the Authorization header, or '' if absent.
+
+    Case-insensitive on the 'Bearer' prefix; trims surrounding whitespace.
+    """
+    raw = request.headers.get("Authorization", "").strip()
+    if not raw:
+        return ""
+    # Case-insensitive 'Bearer' prefix removal
+    parts = raw.split(None, 1)
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1].strip()
+    return raw  # tolerate raw token without prefix
+
+
+@router.post('/api/auth/microsoft/start')
+async def auth_microsoft_start(request: Request):
+    """Start a Microsoft device-code flow. Unauthenticated."""
+    try:
+        return graph.start_device_code()
+    except graph.GraphError as exc:
+        return JSONResponse(
+            {"error": f"Microsoft auth start failed: {exc.message}"},
+            status_code=502,
+        )
+
+
+@router.post('/api/auth/microsoft/poll')
+async def auth_microsoft_poll(request: Request):
+    """Poll the device-code endpoint once. Unauthenticated.
+
+    Body: ``{"device_code": "..."}``.
+    Returns either ``{"status": "pending"}`` or the token-bearing dict.
+    """
+    body = await request.json() if await request.body() else {}
+    device_code = (body or {}).get("device_code", "").strip()
+    if not device_code:
+        return JSONResponse(
+            {"error": "device_code is required"}, status_code=400,
+        )
+    try:
+        return graph.poll_device_code(device_code)
+    except graph.GraphError as exc:
+        # expired_token / access_denied / etc. — return 401 so the UI can
+        # restart the flow.
+        return JSONResponse(
+            {"error": exc.message, "code": exc.error_code},
+            status_code=401,
+        )
+
+
+@router.post('/api/auth/microsoft/refresh')
+async def auth_microsoft_refresh(request: Request):
+    """Exchange a refresh token for a fresh access token. Unauthenticated."""
+    body = await request.json() if await request.body() else {}
+    refresh_token = (body or {}).get("refresh_token", "").strip()
+    if not refresh_token:
+        return JSONResponse(
+            {"error": "refresh_token is required"}, status_code=400,
+        )
+    try:
+        return graph.refresh_access_token(refresh_token)
+    except graph.GraphError as exc:
+        return JSONResponse(
+            {"error": exc.message, "code": exc.error_code},
+            status_code=401,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Deck upload and download endpoints
 # ---------------------------------------------------------------------------
 
@@ -678,9 +758,12 @@ async def upload_deck(
     file: UploadFile = File(...),
     generate_tags: bool = Form(False),
 ):
-    """API: Upload a .pptx file, export images, catalog, and optionally generate tags."""
-    from aippt.ingest import ingest_deck
+    """API: Upload a .pptx file, export images, catalog, and optionally generate tags.
 
+    Requires an ``Authorization: Bearer <ms-token>`` header so the Linux
+    Graph render path has a token. Returns 403 in view-only mode and 401
+    when no token was provided.
+    """
     db_path = request.app.state.db_path
     uploads_dir = request.app.state.uploads_dir
     gateway_config = request.app.state.gateway_config
@@ -689,9 +772,21 @@ async def upload_deck(
     if not file.filename or not file.filename.lower().endswith('.pptx'):
         return JSONResponse({'error': 'Only .pptx files are supported'}, status_code=400)
 
-    # Suppress AI tags in view-only mode
+    # View-only deployments cannot ingest at all (LLM access required for
+    # downstream tagging, and the render path needs a per-user MS token).
     if getattr(request.app.state, "view_only", False):
-        generate_tags = False
+        return JSONResponse(
+            {"error": "Deck ingest is disabled in view-only mode"},
+            status_code=403,
+        )
+
+    ms_token = _extract_bearer_token(request)
+    if not ms_token:
+        return JSONResponse(
+            {"error": "Microsoft sign-in required for ingest. "
+                      "Sign in with the Microsoft button and retry."},
+            status_code=401,
+        )
 
     # Build a collision-safe filename and save to uploads_dir
     unique_prefix = uuid.uuid4().hex
@@ -710,6 +805,7 @@ async def upload_deck(
             generate_tags=generate_tags,
             gateway_config=gateway_config,
             require_images=False,
+            ms_token=ms_token,
         )
     except Exception as exc:
         return JSONResponse({'error': f'Failed to ingest deck: {exc}'}, status_code=500)

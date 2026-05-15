@@ -1,11 +1,15 @@
 """FastAPI web application."""
+import logging
 import os
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
+from aippt.config import load_sharepoint_config
 from aippt.web.routes import router
+
+logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -51,6 +55,18 @@ def create_app(db_path: str = "slides.db", gateway_config: str = None, uploads_d
         app.state.view_only = detect_view_only(gateway_config)
     else:
         app.state.view_only = view_only
+
+    # Load SharePoint render-staging coordinates if available. Linux deploys
+    # need this for the Graph PPTX -> PDF -> PNG path; Windows / no-render
+    # deploys can leave it unset.
+    sp_config = None
+    try:
+        if gateway_config:
+            sp_config = load_sharepoint_config(gateway_config)
+    except (ValueError, RuntimeError) as exc:
+        logger.warning("SharePoint config invalid in %s: %s", gateway_config, exc)
+    app.state.sharepoint_config = sp_config
+
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     # Mount Sphinx docs at /docs when the build output exists

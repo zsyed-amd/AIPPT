@@ -40,13 +40,21 @@ def app(tmp_path):
     """Create a fresh app with isolated db and uploads_dir."""
     db_path = str(tmp_path / "test.db")
     uploads_dir = str(tmp_path / "uploads")
-    return create_app(db_path=db_path, uploads_dir=uploads_dir)
+    # Force view_only=False so the upload endpoint isn't 403-gated by the
+    # PRD-A view-only block. A test Bearer token is supplied in _upload.
+    return create_app(db_path=db_path, uploads_dir=uploads_dir, view_only=False)
 
 
 @pytest.fixture
 def client(app):
     """Starlette TestClient wrapping the app."""
     return TestClient(app)
+
+
+# Default Bearer header for every upload — PRD A requires Microsoft sign-in
+# for the Linux Graph render path. Tests don't actually hit Graph (export is
+# mocked) but the upload endpoint requires the header to clear its 401 gate.
+_TEST_AUTH = {"Authorization": "Bearer test-ms-token"}
 
 
 def _upload(client, filename="my_deck.pptx", num_slides=3, generate_tags=False):
@@ -59,6 +67,7 @@ def _upload(client, filename="my_deck.pptx", num_slides=3, generate_tags=False):
         "/api/decks/upload",
         files={"file": (filename, buf, PPTX_MIME)},
         data=data,
+        headers=_TEST_AUTH,
     )
 
 
@@ -121,6 +130,7 @@ class TestUploadDeck:
         resp1 = client.post(
             "/api/decks/upload",
             files={"file": ("deck.pptx", io.BytesIO(pptx_bytes), PPTX_MIME)},
+            headers=_TEST_AUTH,
         )
         assert resp1.status_code == 200, resp1.text
         id1 = resp1.json()["id"]
@@ -129,6 +139,7 @@ class TestUploadDeck:
         resp2 = client.post(
             "/api/decks/upload",
             files={"file": ("deck.pptx", io.BytesIO(pptx_bytes), PPTX_MIME)},
+            headers=_TEST_AUTH,
         )
         assert resp2.status_code == 200, resp2.text
         id2 = resp2.json()["id"]
@@ -183,6 +194,7 @@ class TestDownloadDeck:
         resp = client.post(
             "/api/decks/upload",
             files={"file": (filename, buf, PPTX_MIME)},
+            headers=_TEST_AUTH,
         )
         assert resp.status_code == 200, resp.text
         return resp.json()
