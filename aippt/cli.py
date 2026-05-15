@@ -2,7 +2,11 @@
 import argparse
 import logging
 import os
+import subprocess
 import sys
+
+from aippt import graph, render
+from aippt.config import load_sharepoint_config
 
 logger = logging.getLogger(__name__)
 
@@ -984,22 +988,68 @@ def cmd_ingest(args):
     return 0
 
 
+def _export_images_linux(args, out_dir: str) -> int:
+    """Linux branch: render via Microsoft Graph (PPTX → SP → PDF → pdftoppm)."""
+    gateway_path = getattr(args, "gateway_config", None) or "gateway.yaml"
+    sp_config = load_sharepoint_config(gateway_path)
+    if sp_config is None:
+        logger.error(
+            "SharePoint render config missing. Add a 'sharepoint' block to "
+            "%s with render_site_id and render_drive_id (see "
+            "gateway.yaml.example).", gateway_path,
+        )
+        return 1
+
+    token = (
+        getattr(args, "ms_token", None)
+        or graph.get_token_from_env()
+    )
+    if not token:
+        logger.error(
+            "Microsoft sign-in required. Set MS_ACCESS_TOKEN or pass "
+            "--ms-token to use the Linux render pipeline.",
+        )
+        return 1
+
+    ntid = (
+        os.environ.get("AIPPT_USER_NTID", "").strip()
+        or os.environ.get("USER", "").strip()
+        or "anonymous"
+    )
+
+    try:
+        render.render_pptx_to_pngs(
+            pptx_path=os.path.abspath(args.deck),
+            out_dir=out_dir,
+            token=token,
+            ntid=ntid,
+            site_id=sp_config.site_id,
+            drive_id=sp_config.drive_id,
+            root_path=sp_config.root_path,
+        )
+    except graph.GraphError as exc:
+        logger.error("Microsoft Graph error: %s", exc)
+        return 1
+    except FileNotFoundError as exc:
+        logger.error("%s", exc)
+        return 1
+    except subprocess.CalledProcessError as exc:
+        logger.error("pdftoppm failed: %s", exc)
+        return 1
+    return 0
+
+
 def cmd_export_images(args):
-    """Export slides to PNG images using PowerPoint COM automation."""
-    import subprocess
+    """Export slides to PNG images.
+
+    On Linux: renders via Microsoft Graph (PPTX → SharePoint → PDF →
+    pdftoppm). On Windows: drives PowerPoint via the bundled PowerShell
+    script (COM automation).
+    """
     from aippt.config import load_dirs_config, resolve_path
 
     if not os.path.exists(args.deck):
         logger.error(f"File not found: {args.deck}")
-        return 1
-
-    # Locate the PowerShell script relative to this file
-    script_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts")
-    ps_script = os.path.join(script_dir, "Export-SlidesToImages.ps1")
-
-    if not os.path.exists(ps_script):
-        logger.error(f"PowerShell script not found: {ps_script}")
-        logger.info("Expected at: scripts/Export-SlidesToImages.ps1")
         return 1
 
     dirs = load_dirs_config()
@@ -1009,6 +1059,18 @@ def cmd_export_images(args):
     if not out_dir:
         deck_name = os.path.splitext(os.path.basename(args.deck))[0]
         out_dir = os.path.join(images_base, deck_name)
+
+    if sys.platform.startswith("linux"):
+        return _export_images_linux(args, out_dir)
+
+    # Windows / WSL+Windows-PowerShell branch
+    script_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts")
+    ps_script = os.path.join(script_dir, "Export-SlidesToImages.ps1")
+
+    if not os.path.exists(ps_script):
+        logger.error(f"PowerShell script not found: {ps_script}")
+        logger.info("Expected at: scripts/Export-SlidesToImages.ps1")
+        return 1
 
     # Find PowerShell executable
     ps_exe = _find_powershell()
@@ -1569,12 +1631,19 @@ def build_parser():
     p_ingest.add_argument("--theme", default=None, help="Theme name (overrides auto-detection from script)")
 
     # export-images
-    p_eimg = sub.add_parser("export-images", help="Export slides to PNG images (requires PowerPoint)")
+    p_eimg = sub.add_parser(
+        "export-images",
+        help="Export slides to PNG images (PowerPoint COM on Windows, Microsoft Graph on Linux)",
+    )
     p_eimg.add_argument("deck", help="PowerPoint file to export")
     p_eimg.add_argument("out_dir", nargs="?", default=None,
                         help="Output directory (default: images/<deck-name>/)")
-    p_eimg.add_argument("--width", type=int, default=1920, help="Image width in pixels (default: 1920)")
-    p_eimg.add_argument("--height", type=int, default=1080, help="Image height in pixels (default: 1080)")
+    p_eimg.add_argument("--width", type=int, default=1920, help="Image width in pixels (default: 1920, Windows only)")
+    p_eimg.add_argument("--height", type=int, default=1080, help="Image height in pixels (default: 1080, Windows only)")
+    p_eimg.add_argument("--ms-token", default=None,
+                        help="Microsoft Graph access token (Linux render path; falls back to MS_ACCESS_TOKEN env)")
+    p_eimg.add_argument("--gateway-config", default="gateway.yaml",
+                        help="Path to gateway.yaml for sharepoint config (Linux render path)")
 
     # improve
     p_improve = sub.add_parser("improve", help="Improve slides using LLM analysis and rewrite")

@@ -29,6 +29,7 @@ def ingest_deck(
     progress_callback: Optional[callable] = None,
     source_script_path: Optional[str] = None,
     source_theme: Optional[str] = None,
+    ms_token: Optional[str] = None,
 ) -> dict:
     """Run full ingest pipeline: export images → catalog → optional tags.
 
@@ -75,6 +76,8 @@ def ingest_deck(
             out_dir=images_dir,
             width=width,
             height=height,
+            ms_token=ms_token,
+            gateway_config=gateway_config or "gateway.yaml",
         )
         rc = cmd_export_images(export_args)
         if rc == 0:

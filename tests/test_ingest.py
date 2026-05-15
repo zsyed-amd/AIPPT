@@ -17,6 +17,23 @@ class TestIngestDeck:
     @patch("aippt.ingest.get_deck_by_id", return_value={"slide_count": 5})
     @patch("aippt.ingest.catalog_deck", return_value=42)
     @patch("aippt.ingest.cmd_export_images", return_value=0)
+    def test_ms_token_threads_to_export_args(
+        self, mock_export, mock_catalog, mock_get, tmp_path
+    ):
+        deck = tmp_path / "test.pptx"
+        deck.touch()
+        ingest_deck(
+            str(deck), db_path=str(tmp_path / "test.db"),
+            ms_token="bearer-tok",
+            gateway_config="custom-gateway.yaml",
+        )
+        ns = mock_export.call_args.args[0]
+        assert ns.ms_token == "bearer-tok"
+        assert ns.gateway_config == "custom-gateway.yaml"
+
+    @patch("aippt.ingest.get_deck_by_id", return_value={"slide_count": 5})
+    @patch("aippt.ingest.catalog_deck", return_value=42)
+    @patch("aippt.ingest.cmd_export_images", return_value=0)
     def test_basic_ingest(self, mock_export, mock_catalog, mock_get, tmp_path):
         deck = tmp_path / "test.pptx"
         deck.touch()
