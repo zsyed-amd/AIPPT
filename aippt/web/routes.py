@@ -735,15 +735,36 @@ def _extract_ntid_header(request: Request) -> str:
     return request.headers.get("X-AIPPT-NTID", "").strip()
 
 
+def _user_auth_error_status(exc) -> int:
+    """Status mapping for /poll and /refresh.
+
+    These endpoints' GraphErrors come in two flavors:
+      - 4xx from AAD (expired_token, access_denied, invalid_grant) → the user
+        needs to re-auth. The browser keys off HTTP 401 to abort the flow,
+        so we collapse all 4xx into 401.
+      - 5xx from AAD (service outage) → re-auth won't help. Surface as 502
+        so the UI shows a transient error instead of bouncing the user back
+        to sign-in repeatedly.
+    """
+    code = getattr(exc, "status_code", 0) or 0
+    if 500 <= code:
+        return 502
+    return 401
+
+
 @router.post('/api/auth/microsoft/start')
 async def auth_microsoft_start(request: Request):
     """Start a Microsoft device-code flow. Unauthenticated."""
     try:
         return graph.start_device_code()
     except graph.GraphError as exc:
+        # Pass 4xx through (server-config bugs like invalid_client are easier
+        # to debug when the real status reaches the client); collapse 5xx to
+        # 502 so transient AAD outages don't masquerade as our bugs.
         return JSONResponse(
-            {"error": f"Microsoft auth start failed: {exc.message}"},
-            status_code=502,
+            {"error": f"Microsoft auth start failed: {exc.message}",
+             "code": exc.error_code},
+            status_code=_graph_error_status(exc),
         )
 
 
@@ -763,11 +784,9 @@ async def auth_microsoft_poll(request: Request):
     try:
         return graph.poll_device_code(device_code)
     except graph.GraphError as exc:
-        # expired_token / access_denied / etc. — return 401 so the UI can
-        # restart the flow.
         return JSONResponse(
             {"error": exc.message, "code": exc.error_code},
-            status_code=401,
+            status_code=_user_auth_error_status(exc),
         )
 
 
@@ -785,7 +804,7 @@ async def auth_microsoft_refresh(request: Request):
     except graph.GraphError as exc:
         return JSONResponse(
             {"error": exc.message, "code": exc.error_code},
-            status_code=401,
+            status_code=_user_auth_error_status(exc),
         )
 
 

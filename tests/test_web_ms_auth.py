@@ -72,6 +72,18 @@ class TestAuthStart:
         assert resp.status_code == 502
         assert "AAD is down" in resp.json()["error"]
 
+    @patch("aippt.web.routes.graph.start_device_code")
+    def test_graph_4xx_passes_through(self, mock_start, client):
+        """A 4xx from AAD (bad client_id, bad scope) is a server-config bug,
+        not an AAD outage. Hiding it behind 502 makes debugging painful —
+        pass the upstream status through so logs/clients see the truth."""
+        mock_start.side_effect = graph.GraphError(
+            400, "invalid_client", "Bad client id",
+        )
+        resp = client.post("/api/auth/microsoft/start")
+        assert resp.status_code == 400
+        assert "invalid_client" in resp.json().get("code", "")
+
 
 # ---------------------------------------------------------------------------
 # /api/auth/microsoft/poll
@@ -120,6 +132,20 @@ class TestAuthPoll:
         assert resp.status_code == 401
         assert "expired" in resp.json()["error"].lower()
 
+    @patch("aippt.web.routes.graph.poll_device_code")
+    def test_5xx_returns_502_not_401(self, mock_poll, client):
+        """An AAD outage during polling must NOT be reported as 401 — the
+        browser keys off 401 to abort the device-code flow and ask the user
+        to re-sign-in. Re-auth won't fix an upstream 5xx; surface it as 502
+        so the UI shows a transient error instead."""
+        mock_poll.side_effect = graph.GraphError(
+            503, "serviceUnavailable", "AAD is down",
+        )
+        resp = client.post(
+            "/api/auth/microsoft/poll", json={"device_code": "abc"},
+        )
+        assert resp.status_code == 502
+
 
 # ---------------------------------------------------------------------------
 # /api/auth/microsoft/refresh
@@ -154,6 +180,17 @@ class TestAuthRefresh:
             "/api/auth/microsoft/refresh", json={"refresh_token": "expired"},
         )
         assert resp.status_code == 401
+
+    @patch("aippt.web.routes.graph.refresh_access_token")
+    def test_5xx_returns_502_not_401(self, mock_refresh, client):
+        """Same reasoning as poll: an AAD 5xx isn't fixed by re-auth."""
+        mock_refresh.side_effect = graph.GraphError(
+            500, "internalServerError", "AAD is down",
+        )
+        resp = client.post(
+            "/api/auth/microsoft/refresh", json={"refresh_token": "rt"},
+        )
+        assert resp.status_code == 502
 
 
 # ---------------------------------------------------------------------------
