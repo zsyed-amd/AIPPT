@@ -10,10 +10,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Stat callout cards with shadow and rounded corners
 - URL auto-linking in slide content (bare URLs converted to hyperlinks)
+- Microsoft Graph render pipeline for Linux/containerized deployments: PPTX → SharePoint → `?format=pdf` → `pdftoppm` → per-slide PNGs (`aippt/graph.py`, `aippt/render.py`). Removes the PowerPoint COM dependency for image export on non-Windows hosts.
+- Device-code Microsoft sign-in in the web UI (`static/js/ms-auth.js`) — tokens live only in browser `localStorage`; the server is stateless and accepts `Authorization: Bearer` per request.
+- `MS_ACCESS_TOKEN` env var path for the CLI `export-images` command on Linux.
+- `gateway.yaml` `sharepoint:` block (`render_site_id`, `render_drive_id`, optional `render_root_path`) loaded by `aippt/config.py`.
+- `docs/sharepoint-setup.md` — provisioning, IDs, permissions, and verification for the staging library.
+- `poppler-utils` installed in the Dockerfile (provides `pdftoppm`).
+- Live integration tests at `tests/test_graph_live.py`, opt-in via `-m live` and `MS_ACCESS_TOKEN` (+ `AIPPT_SP_SITE_ID` / `AIPPT_SP_DRIVE_ID` for the end-to-end render check).
 
 ### Changed
 
 - Two-column layout alignment improved for density-aware content distribution
+- Web `/api/decks/create` and `/api/decks/upload[-stream]` now require `Authorization: Bearer <token>`; Linux deployments without SharePoint configuration refuse image-render requests with a clear error instead of failing later in the pipeline.
+- Microsoft auth endpoints (`/api/auth/ms/start|poll|refresh`) surface upstream Graph errors with their status code preserved (4xx pass-through on `/start`; 5xx → 502 on `/poll`/`/refresh` while keeping 4xx → 401 for the existing UI contract).
 
 ## [3.4.0] - 2026-05-15 — AMD Instinct Design System Web UI
 
