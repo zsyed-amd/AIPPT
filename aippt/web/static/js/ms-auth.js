@@ -102,6 +102,12 @@
         var headers = new Headers(opts.headers || {});
         var token = getToken();
         if (token) headers.set('Authorization', 'Bearer ' + token);
+        // Per-user SharePoint render-staging folders are keyed by NTID.
+        // The 'aippt_ntid' key is already populated by the NTID input field
+        // in the UI; we forward it so the Linux Graph render path can write
+        // to the user's subfolder instead of a shared 'anonymous' one.
+        var ntid = (localStorage.getItem('aippt_ntid') || '').trim();
+        if (ntid) headers.set('X-AIPPT-NTID', ntid);
         var first = fetch(url, Object.assign({}, opts, {headers: headers}));
         return first.then(function (resp) {
             if (resp.status !== 401) return resp;
@@ -110,6 +116,7 @@
                 if (!newToken) return resp;
                 var retryHeaders = new Headers(opts.headers || {});
                 retryHeaders.set('Authorization', 'Bearer ' + newToken);
+                if (ntid) retryHeaders.set('X-AIPPT-NTID', ntid);
                 return fetch(url, Object.assign({}, opts, {headers: retryHeaders}));
             });
         });

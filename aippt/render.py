@@ -92,6 +92,15 @@ def render_pptx_to_pngs(
     )
     upload_target = f"{upload_path}:/content"
 
+    # Graph's small-file PUT does not create intermediate SharePoint folders,
+    # so the per-user subfolder must exist before the first render for a new
+    # NTID. ensure_folder swallows 409 to keep concurrent renders idempotent.
+    clean_root = root_path.strip("/")
+    parent_path = (
+        f"/sites/{site_id}/drives/{drive_id}/root:/{clean_root}"
+    )
+    graph.ensure_folder(parent_path, name=ntid, token=token)
+
     data = pptx.read_bytes()
     item_id: Optional[str] = None
     item_path: Optional[str] = None

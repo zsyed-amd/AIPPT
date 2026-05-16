@@ -1011,8 +1011,12 @@ def _export_images_linux(args, out_dir: str) -> int:
         )
         return 1
 
+    # Caller-supplied ntid wins (web layer threads X-AIPPT-NTID header here).
+    # Env fallbacks are for CLI/CI use, never to silently route a signed-in
+    # web user's renders into someone else's per-user SP subfolder.
     ntid = (
-        os.environ.get("AIPPT_USER_NTID", "").strip()
+        (getattr(args, "ntid", None) or "").strip()
+        or os.environ.get("AIPPT_USER_NTID", "").strip()
         or os.environ.get("USER", "").strip()
         or "anonymous"
     )

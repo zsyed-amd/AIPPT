@@ -103,3 +103,23 @@ class TestDeviceCodeModalXss:
             "strings — use createElement so the modal cannot become an XSS "
             "sink even if a future change adds network-supplied content."
         )
+
+
+class TestNtidHeaderInFetchWithAuth:
+    """fetchWithAuth must attach X-AIPPT-NTID so the Linux render path can
+    write to the per-user SharePoint subfolder. Without it, every render
+    lands under a generic 'anonymous' folder."""
+
+    def test_fetch_with_auth_attaches_ntid_header(self, js_source):
+        body = _extract_function_body(js_source, "fetchWithAuth")
+        assert "X-AIPPT-NTID" in body, (
+            "fetchWithAuth must attach the X-AIPPT-NTID header from "
+            "localStorage so per-user SP folders work on Linux."
+        )
+
+    def test_fetch_with_auth_reads_ntid_from_local_storage(self, js_source):
+        body = _extract_function_body(js_source, "fetchWithAuth")
+        assert "aippt_ntid" in body, (
+            "fetchWithAuth must read 'aippt_ntid' from localStorage — the "
+            "key already used by the rest of the UI."
+        )

@@ -433,3 +433,77 @@ class TestUploadStreamFailLoudOnRenderFailure:
         assert "event: error" in body
         assert "Token expired" in body
         assert "event: complete" not in body
+
+
+# ---------------------------------------------------------------------------
+# R4: NTID propagation — the X-AIPPT-NTID header must thread through the
+# upload endpoint into ingest_deck so the per-user SP subfolder is correct.
+# Without this, every user's renders collide under the same "anonymous"
+# folder (or whatever USER env var happens to be set on the server).
+# ---------------------------------------------------------------------------
+
+
+class TestUploadNtidPropagation:
+    @patch("aippt.web.routes.ingest_deck")
+    def test_ntid_header_is_threaded_to_ingest(
+        self, mock_ingest, client, fake_pptx_bytes,
+    ):
+        mock_ingest.return_value = {
+            "deck_id": 1, "deck_name": "d", "slide_count": 1,
+            "images_exported": True, "tags_generated": False,
+            "source_tracked": False,
+        }
+        resp = client.post(
+            "/api/decks/upload",
+            files={"file": ("deck.pptx", fake_pptx_bytes,
+                            "application/vnd.openxmlformats-officedocument.presentationml.presentation")},
+            headers={
+                "Authorization": "Bearer tok",
+                "X-AIPPT-NTID": "melliott",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert mock_ingest.call_args.kwargs["ntid"] == "melliott"
+
+    @patch("aippt.web.routes.ingest_deck")
+    def test_missing_ntid_header_falls_back_to_empty(
+        self, mock_ingest, client, fake_pptx_bytes,
+    ):
+        """No NTID header → ingest_deck receives ntid='' (or None). The CLI
+        layer is responsible for choosing the env-var fallback so the web
+        layer doesn't leak server-side state into per-user paths."""
+        mock_ingest.return_value = {
+            "deck_id": 1, "deck_name": "d", "slide_count": 1,
+            "images_exported": True, "tags_generated": False,
+            "source_tracked": False,
+        }
+        resp = client.post(
+            "/api/decks/upload",
+            files={"file": ("deck.pptx", fake_pptx_bytes,
+                            "application/vnd.openxmlformats-officedocument.presentationml.presentation")},
+            headers={"Authorization": "Bearer tok"},
+        )
+        assert resp.status_code == 200, resp.text
+        # Must be a falsy/empty value, not the server's $USER
+        assert not mock_ingest.call_args.kwargs.get("ntid")
+
+    @patch("aippt.web.routes.ingest_deck")
+    def test_ntid_is_trimmed(
+        self, mock_ingest, client, fake_pptx_bytes,
+    ):
+        mock_ingest.return_value = {
+            "deck_id": 1, "deck_name": "d", "slide_count": 1,
+            "images_exported": True, "tags_generated": False,
+            "source_tracked": False,
+        }
+        resp = client.post(
+            "/api/decks/upload",
+            files={"file": ("deck.pptx", fake_pptx_bytes,
+                            "application/vnd.openxmlformats-officedocument.presentationml.presentation")},
+            headers={
+                "Authorization": "Bearer tok",
+                "X-AIPPT-NTID": "  melliott  ",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert mock_ingest.call_args.kwargs["ntid"] == "melliott"

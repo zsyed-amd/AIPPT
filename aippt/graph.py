@@ -204,6 +204,43 @@ def delete_item(
         raise _parse_graph_error(exc) from exc
 
 
+def ensure_folder(
+    parent_path: str,
+    *,
+    name: str,
+    token: str,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> None:
+    """Idempotently create a folder named ``name`` under ``parent_path``.
+
+    Graph's small-file PUT does not create intermediate SharePoint folders,
+    so per-user subfolders must exist before the first upload. We POST with
+    conflictBehavior=fail and swallow 409 so concurrent renders for the same
+    NTID don't race each other.
+
+    ``parent_path`` is the path-style Graph URL fragment of the parent (no
+    trailing colon), e.g. ``/sites/{sid}/drives/{did}/root:/AIPPT/staging``.
+    """
+    url = f"{GRAPH_BASE}{parent_path}:/children"
+    body = json.dumps({
+        "name": name,
+        "folder": {},
+        "@microsoft.graph.conflictBehavior": "fail",
+    }).encode()
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers=_auth_headers(token, content_type="application/json"),
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout):
+            return None
+    except urllib.error.HTTPError as exc:
+        if exc.code == 409:
+            # Folder already exists — treat as success.
+            return None
+        raise _parse_graph_error(exc) from exc
+
+
 def put_small_file(
     path: str,
     *,

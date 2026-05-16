@@ -385,3 +385,71 @@ class TestGetTokenFromEnv:
     def test_strips_whitespace(self, monkeypatch):
         monkeypatch.setenv("MS_ACCESS_TOKEN", "  abc-123  ")
         assert graph.get_token_from_env() == "abc-123"
+
+
+# ---------------------------------------------------------------------------
+# R4: idempotent folder creation for the per-user SP staging subfolder.
+#
+# Graph's small-file PUT does NOT consistently create intermediate folders
+# on SharePoint (it does for OneDrive personal). Without an explicit folder
+# step, the first upload for a new NTID 404s. ensure_folder() POSTs a
+# children-create with conflictBehavior=fail and treats 409 as success
+# so concurrent renders for the same NTID don't race.
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureFolder:
+    @patch("aippt.graph.urllib.request.urlopen")
+    def test_creates_folder_with_conflict_behavior_fail(self, mock_urlopen):
+        """Happy path: POST /children with folder facet + conflictBehavior=fail."""
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(
+            {"id": "folder-id", "name": "melliott"}).encode()
+        mock_resp.__enter__.return_value = mock_resp
+        mock_urlopen.return_value = mock_resp
+
+        graph.ensure_folder(
+            "/sites/SID/drives/DID/root:/AIPPT/render-staging",
+            name="melliott",
+            token="t",
+        )
+
+        req = mock_urlopen.call_args[0][0]
+        assert req.get_method() == "POST"
+        assert req.full_url.endswith("/children")
+        body = json.loads(req.data)
+        assert body["name"] == "melliott"
+        assert "folder" in body
+        # Idempotency knob — fail on conflict so we can swallow 409 cleanly.
+        assert body["@microsoft.graph.conflictBehavior"] == "fail"
+
+    @patch("aippt.graph.urllib.request.urlopen")
+    def test_409_conflict_is_idempotent_success(self, mock_urlopen):
+        """409 'nameAlreadyExists' must NOT raise — concurrent renders race."""
+        body = json.dumps({"error": {"code": "nameAlreadyExists",
+                                     "message": "Already there"}}).encode()
+        mock_urlopen.side_effect = urllib.error.HTTPError(
+            url="x", code=409, msg="", hdrs=None, fp=io.BytesIO(body))
+
+        # Must not raise. Return value irrelevant; the side effect is "folder exists now."
+        graph.ensure_folder(
+            "/sites/SID/drives/DID/root:/AIPPT/render-staging",
+            name="melliott",
+            token="t",
+        )
+
+    @patch("aippt.graph.urllib.request.urlopen")
+    def test_other_errors_raise(self, mock_urlopen):
+        body = json.dumps({"error": {"code": "accessDenied",
+                                     "message": "No access"}}).encode()
+        mock_urlopen.side_effect = urllib.error.HTTPError(
+            url="x", code=403, msg="", hdrs=None, fp=io.BytesIO(body))
+
+        with pytest.raises(graph.GraphError) as exc:
+            graph.ensure_folder(
+                "/sites/SID/drives/DID/root:/AIPPT/render-staging",
+                name="melliott",
+                token="t",
+            )
+        assert exc.value.status_code == 403
+        assert exc.value.error_code == "accessDenied"

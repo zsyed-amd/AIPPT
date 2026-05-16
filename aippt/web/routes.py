@@ -724,6 +724,17 @@ def _extract_bearer_token(request: Request) -> str:
     return token  # empty after strip → '' → treated as unauthenticated
 
 
+def _extract_ntid_header(request: Request) -> str:
+    """Return the trimmed X-AIPPT-NTID header, or '' if absent.
+
+    Used by the upload endpoints to scope per-user SharePoint render-staging
+    folders. We deliberately do NOT fall back to the server-side USER env
+    var here — that would route every signed-in user's renders through one
+    shared folder. The CLI layer applies env fallbacks for non-web callers.
+    """
+    return request.headers.get("X-AIPPT-NTID", "").strip()
+
+
 @router.post('/api/auth/microsoft/start')
 async def auth_microsoft_start(request: Request):
     """Start a Microsoft device-code flow. Unauthenticated."""
@@ -818,6 +829,7 @@ async def upload_deck(
                       "Sign in with the Microsoft button and retry."},
             status_code=401,
         )
+    ntid = _extract_ntid_header(request)
 
     # Build a collision-safe filename and save to uploads_dir
     unique_prefix = uuid.uuid4().hex
@@ -837,6 +849,7 @@ async def upload_deck(
             gateway_config=gateway_config,
             require_images=_require_images_for_render(),
             ms_token=ms_token,
+            ntid=ntid,
         )
     except graph.GraphError as exc:
         return JSONResponse(
@@ -1108,6 +1121,7 @@ async def upload_deck_stream(
                       "Sign in with the Microsoft button and retry."},
             status_code=401,
         )
+    ntid = _extract_ntid_header(request)
 
     db_path = request.app.state.db_path
     uploads_dir = request.app.state.uploads_dir
@@ -1161,6 +1175,7 @@ async def upload_deck_stream(
                 require_images=_require_images_for_render(),
                 progress_callback=progress_callback,
                 ms_token=ms_token,
+                ntid=ntid,
             ),
         )
 

@@ -217,3 +217,59 @@ class TestRenderPreconditions:
                 token="t", ntid="x", site_id="S", drive_id="D",
                 root_path="r",
             )
+
+
+# ---------------------------------------------------------------------------
+# R4: render must ensure the per-user SP folder exists before upload.
+#
+# Without this, the first render for a brand-new NTID 404s because Graph's
+# small-file PUT doesn't create intermediate SharePoint folders.
+# ---------------------------------------------------------------------------
+
+
+class TestEnsureFolderBeforeUpload:
+    @patch("aippt.render.shutil.which", return_value="/usr/bin/pdftoppm")
+    @patch("aippt.render.subprocess.run")
+    @patch("aippt.render.graph")
+    def test_render_ensures_per_user_folder_before_put(
+        self, mock_graph, mock_run, _which, tmp_path,
+    ):
+        pptx = tmp_path / "deck.pptx"
+        pptx.write_bytes(b"x" * 1024)
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+
+        mock_graph.SMALL_FILE_LIMIT = 4 * 1024 * 1024
+        mock_graph.PPTX_CONTENT_TYPE = render.PPTX_CONTENT_TYPE
+        mock_graph.put_small_file.return_value = {"id": "ITEM_ID"}
+        mock_graph.download_pdf.return_value = b"%PDF fake"
+        mock_graph.delete_item.return_value = None
+        mock_graph.ensure_folder.return_value = None
+
+        def _fake_run(cmd, **kw):
+            (out_dir / "slide-01.png").write_bytes(b"PNG")
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        mock_run.side_effect = _fake_run
+
+        render.render_pptx_to_pngs(
+            pptx_path=str(pptx),
+            out_dir=str(out_dir),
+            token="t",
+            ntid="melliott",
+            site_id="SID",
+            drive_id="DID",
+            root_path="AIPPT/render-staging",
+        )
+
+        # Must call ensure_folder for the NTID subfolder
+        mock_graph.ensure_folder.assert_called_once()
+        kw = mock_graph.ensure_folder.call_args.kwargs
+        assert kw["name"] == "melliott"
+        assert kw["token"] == "t"
+        # Parent path points at the configured root, not the per-user dir
+        parent = mock_graph.ensure_folder.call_args.args[0]
+        assert parent == "/sites/SID/drives/DID/root:/AIPPT/render-staging"
+
+        # Folder must be created BEFORE the upload (or at least called)
+        assert mock_graph.ensure_folder.called
+        assert mock_graph.put_small_file.called
