@@ -78,10 +78,6 @@ def start_device_code(
     return _post_form(url, {"client_id": client_id, "scope": scopes})
 
 
-# Errors that mean "keep polling" rather than "stop with failure".
-_PENDING_ERRORS = frozenset(("authorization_pending", "slow_down"))
-
-
 def poll_device_code(
     device_code: str,
     *,
@@ -91,8 +87,11 @@ def poll_device_code(
     """Poll the token endpoint once for a pending device-code flow.
 
     Returns:
-        {"status": "pending"} if the user has not yet completed sign-in
-        (or the server asked us to slow down).
+        {"status": "pending"} — user hasn't completed sign-in yet; keep
+            polling at the current cadence.
+        {"status": "slow_down"} — AAD asked us to back off; the caller
+            MUST widen the polling interval (per OAuth 2.0 device-code
+            spec) or risk a longer rate-limit lockout.
         {"status": "ok", "access_token": ..., "refresh_token": ...,
          "expires_in": ..., "token_type": ..., "scope": ...} on success.
 
@@ -107,8 +106,10 @@ def poll_device_code(
             "device_code": device_code,
         })
     except GraphError as exc:
-        if exc.error_code in _PENDING_ERRORS:
+        if exc.error_code == "authorization_pending":
             return {"status": "pending"}
+        if exc.error_code == "slow_down":
+            return {"status": "slow_down"}
         raise
     return {"status": "ok", **result}
 

@@ -126,13 +126,17 @@ class TestPollDeviceCode:
         assert exc.value.error_code == "expired_token"
 
     @patch("aippt.graph.urllib.request.urlopen")
-    def test_slow_down_returns_pending(self, mock_urlopen):
+    def test_slow_down_returns_distinct_status(self, mock_urlopen):
+        """slow_down must NOT be collapsed into 'pending'. The JS poll loop
+        keys off the distinct status to back off its polling interval; if
+        we hide the signal here the loop keeps hammering at the original
+        cadence and risks AAD rate-limit lockout."""
         body = json.dumps({"error": "slow_down"}).encode()
         mock_urlopen.side_effect = urllib.error.HTTPError(
             url="x", code=400, msg="", hdrs=None, fp=io.BytesIO(body))
 
         result = graph.poll_device_code(device_code="abc")
-        assert result == {"status": "pending"}
+        assert result == {"status": "slow_down"}
 
 
 class TestRefreshAccessToken:

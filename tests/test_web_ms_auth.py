@@ -507,3 +507,22 @@ class TestUploadNtidPropagation:
         )
         assert resp.status_code == 200, resp.text
         assert mock_ingest.call_args.kwargs["ntid"] == "melliott"
+
+
+# ---------------------------------------------------------------------------
+# R5: slow_down must surface distinctly so the JS poll loop can back off.
+# ---------------------------------------------------------------------------
+
+
+class TestAuthPollSlowDown:
+    @patch("aippt.web.routes.graph.poll_device_code")
+    def test_slow_down_passes_through(self, mock_poll, client):
+        """When poll_device_code returns slow_down, the endpoint must NOT
+        rewrite it to 'pending'. The browser uses the distinct status to
+        widen its polling interval per the device-code spec."""
+        mock_poll.return_value = {"status": "slow_down"}
+        resp = client.post(
+            "/api/auth/microsoft/poll", json={"device_code": "abc"},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "slow_down"}
