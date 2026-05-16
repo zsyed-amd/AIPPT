@@ -117,47 +117,95 @@
 
     // --- Device-code sign-in UI -------------------------------------------------
 
+    function _el(tag, attrs, text) {
+        var node = document.createElement(tag);
+        if (attrs) {
+            for (var k in attrs) {
+                if (Object.prototype.hasOwnProperty.call(attrs, k)) {
+                    node.setAttribute(k, attrs[k]);
+                }
+            }
+        }
+        if (text != null) node.textContent = String(text);
+        return node;
+    }
+
     function _ensureModal() {
         var modal = document.getElementById('ms-auth-modal');
         if (modal) return modal;
         modal = document.createElement('dialog');
         modal.id = 'ms-auth-modal';
-        modal.innerHTML = [
-            '<article style="max-width: 28rem;">',
-            '  <header>',
-            '    <strong>Sign in to Microsoft</strong>',
-            '  </header>',
-            '  <div id="ms-auth-body">',
-            '    <p style="margin:0 0 0.5rem 0;">Starting sign-in&hellip;</p>',
-            '  </div>',
-            '  <footer style="display:flex; justify-content:flex-end; gap:0.5rem;">',
-            '    <button class="secondary outline" id="ms-auth-cancel">Cancel</button>',
-            '  </footer>',
-            '</article>',
-        ].join('\n');
+
+        var article = _el('article', {style: 'max-width: 28rem;'});
+
+        var header = document.createElement('header');
+        header.appendChild(_el('strong', null, 'Sign in to Microsoft'));
+        article.appendChild(header);
+
+        var bodyDiv = _el('div', {id: 'ms-auth-body'});
+        bodyDiv.appendChild(_el('p', {style: 'margin:0 0 0.5rem 0;'}, 'Starting sign-in…'));
+        article.appendChild(bodyDiv);
+
+        var footer = _el('footer', {style: 'display:flex; justify-content:flex-end; gap:0.5rem;'});
+        var cancelBtn = _el('button', {class: 'secondary outline', id: 'ms-auth-cancel'}, 'Cancel');
+        footer.appendChild(cancelBtn);
+        article.appendChild(footer);
+
+        modal.appendChild(article);
         document.body.appendChild(modal);
-        modal.querySelector('#ms-auth-cancel').addEventListener('click', function () {
-            modal.close();
-        });
+        cancelBtn.addEventListener('click', function () { modal.close(); });
         return modal;
     }
 
     function _renderDeviceCode(modal, info) {
         var body = modal.querySelector('#ms-auth-body');
-        var safeUri = String(info.verification_uri || '');
         var safeCode = String(info.user_code || '');
-        body.innerHTML = [
-            '<p style="margin:0 0 0.75rem 0;">Open this URL in a browser and enter the code:</p>',
-            '<p style="margin:0 0 0.25rem 0;">',
-            '  <a id="ms-auth-uri" href="', safeUri, '" target="_blank" rel="noopener">', safeUri, '</a>',
-            '</p>',
-            '<div style="display:flex; align-items:center; gap:0.5rem; margin:0.75rem 0;">',
-            '  <code id="ms-auth-code" style="font-size:1.4rem; padding:0.35rem 0.6rem;">', safeCode, '</code>',
-            '  <button class="outline" id="ms-auth-copy" style="width:auto; padding:0.25rem 0.6rem; margin:0;">Copy code</button>',
-            '</div>',
-            '<p id="ms-auth-status" style="margin:0; color:var(--pico-muted-color); font-size:0.85rem;">Waiting for sign-in&hellip;</p>',
-        ].join('');
-        var copyBtn = body.querySelector('#ms-auth-copy');
+        // Only allow https:// URIs. A javascript: URL in verification_uri would
+        // execute on click and could exfiltrate tokens from localStorage.
+        // (`_el` and direct document.createElement calls below render everything
+        // as text — never as HTML — so user_code/verification_uri can't be parsed.)
+        var rawUri = String(info.verification_uri || '');
+        var safeUri = rawUri.indexOf('https://') === 0 ? rawUri : '';
+
+        // Clear prior contents (replacing the "Starting sign-in..." placeholder).
+        while (body.firstChild) body.removeChild(body.firstChild);
+
+        body.appendChild(_el('p',
+            {style: 'margin:0 0 0.75rem 0;'},
+            'Open this URL in a browser and enter the code:'));
+
+        var uriP = document.createElement('p');
+        uriP.setAttribute('style', 'margin:0 0 0.25rem 0;');
+        if (safeUri) {
+            var a = document.createElement('a');
+            a.id = 'ms-auth-uri';
+            a.target = '_blank';
+            a.rel = 'noopener';
+            a.href = safeUri;
+            a.textContent = safeUri;
+            uriP.appendChild(a);
+        } else {
+            uriP.appendChild(_el('span', {id: 'ms-auth-uri'},
+                'Invalid verification URL — please try signing in again.'));
+        }
+        body.appendChild(uriP);
+
+        var row = _el('div', {style: 'display:flex; align-items:center; gap:0.5rem; margin:0.75rem 0;'});
+        row.appendChild(_el('code',
+            {id: 'ms-auth-code', style: 'font-size:1.4rem; padding:0.35rem 0.6rem;'},
+            safeCode));
+        var copyBtn = _el('button',
+            {class: 'outline', id: 'ms-auth-copy',
+             style: 'width:auto; padding:0.25rem 0.6rem; margin:0;'},
+            'Copy code');
+        row.appendChild(copyBtn);
+        body.appendChild(row);
+
+        body.appendChild(_el('p',
+            {id: 'ms-auth-status',
+             style: 'margin:0; color:var(--pico-muted-color); font-size:0.85rem;'},
+            'Waiting for sign-in…'));
+
         copyBtn.addEventListener('click', function () {
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 navigator.clipboard.writeText(safeCode).then(function () {
