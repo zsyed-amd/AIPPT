@@ -601,3 +601,113 @@ class TestCreateDeckHardening:
             "SSE error event missing status: 401 — the JS 401 hook in "
             f"handleCreateEvent won't fire. Got: {error_payload!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# R10: server-side NTID validation.
+#
+# X-AIPPT-NTID is interpolated into a SharePoint path. An attacker (or a
+# user with a sloppy NTID field) can submit '/', '\\', ':', '..', etc. and
+# either escape the per-user folder or produce invalid Graph URLs that 5xx
+# deep inside the render pipeline. Validate at the edge with an allowlist
+# and reject before any Graph call is attempted.
+# ---------------------------------------------------------------------------
+
+
+class TestNtidValidation:
+    """X-AIPPT-NTID must match ^[A-Za-z0-9._-]+$ when present."""
+
+    @pytest.fixture
+    def template_setup(self, tmp_path, monkeypatch):
+        from pptx import Presentation
+        template_path = str(tmp_path / "template.pptx")
+        prs = Presentation()
+        prs.save(template_path)
+        config_path = str(tmp_path / "templates.yaml")
+        (tmp_path / "templates.yaml").write_text(
+            f"default_template: {template_path}\n")
+        monkeypatch.setattr(
+            "aippt.config.DEFAULT_TEMPLATE_CONFIG_PATH", config_path
+        )
+        return template_path
+
+    @pytest.mark.parametrize("bad", [
+        "../etc",       # traversal
+        "foo/bar",      # path separator
+        "foo\\bar",     # windows separator
+        "foo:bar",      # SharePoint URL delimiter
+        "foo bar",      # whitespace (would 400 deeper in Graph anyway)
+        "foo*",         # glob
+        "foo?",         # query meta
+        "",             # empty after strip — handled separately
+    ])
+    def test_create_rejects_invalid_ntid(self, client, template_setup, bad):
+        # Empty string is "no NTID supplied" — anonymous fallback, not 400.
+        if bad == "":
+            return
+        resp = client.post(
+            "/api/decks/create",
+            data={"outline_text": "# T\n## S1\n- x\n", "enhance": "false"},
+            headers={
+                "Authorization": "Bearer tok",
+                "X-AIPPT-NTID": bad,
+            },
+        )
+        assert resp.status_code == 400, (
+            f"NTID {bad!r} should be rejected with 400, got {resp.status_code}"
+        )
+        assert "ntid" in resp.json()["error"].lower()
+
+    @patch("aippt.web.routes.ingest_deck")
+    def test_create_accepts_typical_ntid(
+        self, mock_ingest, client, template_setup,
+    ):
+        """Standard NTIDs (alnum + . _ -) must still pass."""
+        mock_ingest.return_value = {
+            "deck_id": 1, "deck_name": "d", "slide_count": 1,
+            "images_exported": True, "tags_generated": False,
+            "source_tracked": False,
+        }
+        for good in ["melliott", "user.name", "user_42", "user-42", "U1"]:
+            resp = client.post(
+                "/api/decks/create",
+                data={"outline_text": "# T\n## S1\n- x\n",
+                      "enhance": "false"},
+                headers={
+                    "Authorization": "Bearer tok",
+                    "X-AIPPT-NTID": good,
+                },
+            )
+            assert resp.status_code == 200, (
+                f"NTID {good!r} should be accepted, got {resp.status_code}"
+            )
+
+    def test_upload_stream_rejects_invalid_ntid(self, client, template_setup):
+        # Use any non-empty bytes — the request should be rejected before
+        # the PPTX parser even runs.
+        resp = client.post(
+            "/api/decks/upload-stream",
+            files={"file": ("d.pptx", b"PK\x03\x04not-really",
+                            "application/vnd.openxmlformats-officedocument."
+                            "presentationml.presentation")},
+            headers={
+                "Authorization": "Bearer tok",
+                "X-AIPPT-NTID": "../escape",
+            },
+        )
+        assert resp.status_code == 400
+        assert "ntid" in resp.json()["error"].lower()
+
+    def test_upload_rejects_invalid_ntid(self, client, template_setup):
+        resp = client.post(
+            "/api/decks/upload",
+            files={"file": ("d.pptx", b"PK\x03\x04not-really",
+                            "application/vnd.openxmlformats-officedocument."
+                            "presentationml.presentation")},
+            headers={
+                "Authorization": "Bearer tok",
+                "X-AIPPT-NTID": "foo/bar",
+            },
+        )
+        assert resp.status_code == 400
+        assert "ntid" in resp.json()["error"].lower()

@@ -724,6 +724,17 @@ def _extract_bearer_token(request: Request) -> str:
     return token  # empty after strip → '' → treated as unauthenticated
 
 
+class InvalidNtid(ValueError):
+    """Raised when X-AIPPT-NTID is present but fails the allowlist check."""
+
+
+# NTIDs are interpolated into the SharePoint path
+# /sites/.../root:/<root>/<NTID>/<job>.pptx — any character outside this set
+# either splits the path ('/', '\\', ':'), escapes the folder ('..'), or
+# causes Graph to 4xx deep inside the pipeline (whitespace, '?', '*', '#').
+_NTID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
 def _extract_ntid_header(request: Request) -> str:
     """Return the trimmed X-AIPPT-NTID header, or '' if absent.
 
@@ -731,8 +742,33 @@ def _extract_ntid_header(request: Request) -> str:
     folders. We deliberately do NOT fall back to the server-side USER env
     var here — that would route every signed-in user's renders through one
     shared folder. The CLI layer applies env fallbacks for non-web callers.
+
+    Raises InvalidNtid if the header is present but doesn't match
+    ``[A-Za-z0-9._-]+``. Validating at the edge keeps malformed input out of
+    the Graph request URL.
     """
-    return request.headers.get("X-AIPPT-NTID", "").strip()
+    raw = request.headers.get("X-AIPPT-NTID", "").strip()
+    if not raw:
+        return ""
+    if not _NTID_RE.match(raw):
+        raise InvalidNtid(
+            "Invalid X-AIPPT-NTID: must match [A-Za-z0-9._-]+ "
+            "(no path separators, whitespace, or URL metacharacters)."
+        )
+    return raw
+
+
+def _ntid_or_400(request: Request):
+    """Wrap ``_extract_ntid_header`` for the edge endpoints.
+
+    Returns ``(ntid, None)`` on success or ``("", JSONResponse(400))`` if the
+    header is malformed. The JSONResponse is shaped like the other 4xx errors
+    (``{"error": "..."}``) so the existing client error handling works.
+    """
+    try:
+        return _extract_ntid_header(request), None
+    except InvalidNtid as exc:
+        return "", JSONResponse({"error": str(exc)}, status_code=400)
 
 
 def _user_auth_error_status(exc) -> int:
@@ -848,7 +884,9 @@ async def upload_deck(
                       "Sign in with the Microsoft button and retry."},
             status_code=401,
         )
-    ntid = _extract_ntid_header(request)
+    ntid, _ntid_err = _ntid_or_400(request)
+    if _ntid_err is not None:
+        return _ntid_err
 
     # Build a collision-safe filename and save to uploads_dir
     unique_prefix = uuid.uuid4().hex
@@ -957,7 +995,9 @@ async def create_deck_stream(
                       "Sign in with the Microsoft button and retry."},
             status_code=401,
         )
-    ntid = _extract_ntid_header(request)
+    ntid, _ntid_err = _ntid_or_400(request)
+    if _ntid_err is not None:
+        return _ntid_err
 
     import asyncio
     import json
@@ -1158,7 +1198,9 @@ async def upload_deck_stream(
                       "Sign in with the Microsoft button and retry."},
             status_code=401,
         )
-    ntid = _extract_ntid_header(request)
+    ntid, _ntid_err = _ntid_or_400(request)
+    if _ntid_err is not None:
+        return _ntid_err
 
     db_path = request.app.state.db_path
     uploads_dir = request.app.state.uploads_dir
