@@ -22,7 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Two-column layout alignment improved for density-aware content distribution
 - Web `/api/decks/create` and `/api/decks/upload[-stream]` now require `Authorization: Bearer <token>`; Linux deployments without SharePoint configuration refuse image-render requests with a clear error instead of failing later in the pipeline.
-- Microsoft auth endpoints (`/api/auth/ms/start|poll|refresh`) surface upstream Graph errors with their status code preserved (4xx pass-through on `/start`; 5xx → 502 on `/poll`/`/refresh` while keeping 4xx → 401 for the existing UI contract).
+- Microsoft auth endpoints (`/api/auth/microsoft/start|poll|refresh`) surface upstream Graph errors with their status code preserved (4xx pass-through on `/start`; 5xx → 502 on `/poll`/`/refresh` while keeping 4xx → 401 for the existing UI contract).
 
 ## [3.4.0] - 2026-05-15 — AMD Instinct Design System Web UI
 
