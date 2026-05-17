@@ -1818,7 +1818,7 @@
             }
 
             try {
-                const resp = await fetch('/api/decks/create', {method: 'POST', body: formData});
+                const resp = await msAuth.fetchWithAuth('/api/decks/create', {method: 'POST', body: formData});
 
                 if (!resp.ok) {
                     let msg = resp.statusText;
