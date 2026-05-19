@@ -326,6 +326,32 @@ class LLMClient:
             return len(text) // 4
 
     # ------------------------------------------------------------------
+    # OpenAI compatibility helper
+    # ------------------------------------------------------------------
+
+    def _openai_chat_create(self, **kwargs):
+        """Call ``client.chat.completions.create`` with automatic
+        ``max_tokens`` ↔ ``max_completion_tokens`` compatibility.
+
+        Older OpenAI / Azure deployments accept ``max_tokens``; newer ones
+        (o1, gpt-4o-2024-12-01+, and the AMD Azure gateway as of 2026-05)
+        reject it and require ``max_completion_tokens``. The wire-level
+        error message is the canonical signal, so we catch the specific
+        400 and retry once with the new name. Anything else propagates.
+        """
+        try:
+            return self.client.chat.completions.create(**kwargs)
+        except openai.BadRequestError as exc:
+            msg = str(exc).lower()
+            if "max_tokens" in kwargs and (
+                "max_completion_tokens" in msg
+                or "'max_tokens' is not supported" in msg
+            ):
+                kwargs["max_completion_tokens"] = kwargs.pop("max_tokens")
+                return self.client.chat.completions.create(**kwargs)
+            raise
+
+    # ------------------------------------------------------------------
     # Text generation
     # ------------------------------------------------------------------
 
@@ -348,7 +374,7 @@ class LLMClient:
                 )
                 return response.content[0].text
             else:
-                response = self.client.chat.completions.create(
+                response = self._openai_chat_create(
                     model=self.model,
                     max_tokens=max_tokens,
                     temperature=temperature,
@@ -432,7 +458,7 @@ class LLMClient:
                     },
                     {"type": "text", "text": prompt},
                 ]
-                response = self.client.chat.completions.create(
+                response = self._openai_chat_create(
                     model=self.model,
                     max_tokens=max_tokens,
                     temperature=temperature,
