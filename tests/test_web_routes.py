@@ -602,6 +602,45 @@ class TestCreateDeckHardening:
             f"handleCreateEvent won't fire. Got: {error_payload!r}"
         )
 
+    @patch("aippt.web.routes.ingest_deck")
+    def test_upload_stream_graph_error_emits_sse_error_event(
+        self, mock_ingest, client,
+    ):
+        """upload-stream must emit ``{status: <code>}`` for in-band Graph
+        errors. R9 regression guard for the second SSE endpoint — the JS
+        handler in handleUploadEvent keys off the same field.
+        """
+        from aippt import graph
+        mock_ingest.side_effect = graph.GraphError(
+            401, "InvalidAuthenticationToken", "Token expired",
+        )
+        resp = client.post(
+            "/api/decks/upload-stream",
+            files={"file": ("d.pptx", b"PK\x03\x04not-really",
+                            "application/vnd.openxmlformats-officedocument."
+                            "presentationml.presentation")},
+            headers={"Authorization": "Bearer tok"},
+        )
+        assert resp.status_code == 200  # SSE always 200
+        body = resp.text
+        assert "event: error" in body
+        import json as _json
+        error_payload = None
+        for block in body.split("\n\n"):
+            if "event: error" not in block:
+                continue
+            for line in block.splitlines():
+                if line.startswith("data: "):
+                    error_payload = _json.loads(line[len("data: "):])
+                    break
+            if error_payload is not None:
+                break
+        assert error_payload is not None, "no SSE error block found"
+        assert error_payload.get("status") == 401, (
+            "upload-stream SSE error event missing status: 401 — the JS 401 "
+            f"hook in handleUploadEvent won't fire. Got: {error_payload!r}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # R10: server-side NTID validation.

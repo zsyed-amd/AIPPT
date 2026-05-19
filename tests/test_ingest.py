@@ -66,6 +66,25 @@ class TestIngestDeck:
         with pytest.raises(RuntimeError, match="PowerShell not found"):
             ingest_deck(str(deck), db_path=str(tmp_path / "test.db"))
 
+    def test_export_graph_error_propagates_as_graph_error(self, tmp_path):
+        """GraphError from cmd_export_images must NOT be wrapped in RuntimeError.
+
+        Regression guard for R9: the SSE workers in routes.py have an
+        ``except graph.GraphError`` branch that emits ``{status: <code>}`` so
+        the browser can sign the user out on 401. If ingest_deck swallows
+        GraphError into a generic RuntimeError, that branch never fires and
+        the user keeps a dead token in localStorage.
+        """
+        from aippt import graph
+        deck = tmp_path / "test.pptx"
+        deck.touch()
+        exc = graph.GraphError(401, "InvalidAuthenticationToken", "Token expired")
+        with patch("aippt.ingest.cmd_export_images", side_effect=exc):
+            with pytest.raises(graph.GraphError) as caught:
+                ingest_deck(str(deck), db_path=str(tmp_path / "test.db"))
+        assert caught.value.status_code == 401
+        assert caught.value.error_code == "InvalidAuthenticationToken"
+
     @patch("aippt.ingest.get_deck_by_id", return_value={"slide_count": 3})
     @patch("aippt.ingest.catalog_deck", return_value=10)
     @patch("aippt.ingest.cmd_export_images", return_value=1)

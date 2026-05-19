@@ -121,6 +121,15 @@ class TestAuthPoll:
         resp = client.post("/api/auth/microsoft/poll", json={})
         assert resp.status_code == 400
 
+    def test_non_json_body_returns_400_not_500(self, client):
+        resp = client.post(
+            "/api/auth/microsoft/poll",
+            content="device_code=foo",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert resp.status_code == 400
+        assert "json" in resp.json()["error"].lower()
+
     @patch("aippt.web.routes.graph.poll_device_code")
     def test_expired_token_returns_401(self, mock_poll, client):
         mock_poll.side_effect = graph.GraphError(
@@ -191,6 +200,30 @@ class TestAuthRefresh:
             "/api/auth/microsoft/refresh", json={"refresh_token": "rt"},
         )
         assert resp.status_code == 502
+
+    def test_non_json_body_returns_400_not_500(self, client):
+        """A misbehaving client posting form-encoded data must get a clean
+        400 with an actionable error, not a 500 stack trace. Mirrors the
+        contract every other 4xx endpoint follows.
+        """
+        resp = client.post(
+            "/api/auth/microsoft/refresh",
+            content="refresh_token=foo",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        assert resp.status_code == 400, (
+            f"non-JSON body should return 400, got {resp.status_code}"
+        )
+        assert "json" in resp.json()["error"].lower()
+
+    def test_malformed_json_returns_400_not_500(self, client):
+        resp = client.post(
+            "/api/auth/microsoft/refresh",
+            content="{not valid json",
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 400
+        assert "json" in resp.json()["error"].lower()
 
 
 # ---------------------------------------------------------------------------

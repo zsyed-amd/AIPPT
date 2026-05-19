@@ -8,6 +8,7 @@ import logging
 import os
 from typing import Optional
 
+from aippt import graph
 from aippt.catalog import catalog_deck, get_deck_by_id, detect_source_engine, detect_source_theme
 from aippt.cli import cmd_export_images, cmd_analyze
 
@@ -93,6 +94,17 @@ def ingest_deck(
             images_dir = None
     except RuntimeError:
         raise
+    except graph.GraphError as exc:
+        # When the strict render path is required, preserve the typed
+        # exception so SSE workers can read status_code and emit
+        # {status: 401, ...} for the browser sign-out hook (R9). When the
+        # caller has opted into the soft path (require_images=False), keep
+        # the original graceful-degradation contract.
+        if require_images:
+            raise
+        logger.warning(f"Microsoft Graph error during image export: {exc}. Cataloging without images.")
+        _progress("export_images_skipped", "Image export unavailable, continuing without images")
+        images_dir = None
     except Exception as exc:
         if require_images:
             raise RuntimeError(f"Image export error: {exc}") from exc

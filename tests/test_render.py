@@ -197,6 +197,60 @@ class TestRenderCleanupOnFailure:
         assert len(pngs) == 1
 
 
+class TestRenderObservability:
+    """Each pipeline stage logs an INFO line so a slow render can be triaged.
+
+    Without these, the server log shows only the initial upload line and
+    the catalog line; the PDF download and pdftoppm steps are silent and a
+    stuck render looks like a hang. These tests are the contract.
+    """
+
+    @patch("aippt.render.shutil.which", return_value="/usr/bin/pdftoppm")
+    @patch("aippt.render.subprocess.run")
+    @patch("aippt.render.graph")
+    def test_logs_each_stage(
+        self, mock_graph, mock_run, _which, tmp_path, caplog,
+    ):
+        import logging as _logging
+        pptx = tmp_path / "deck.pptx"
+        pptx.write_bytes(b"x" * 1024)
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+
+        mock_graph.SMALL_FILE_LIMIT = 4 * 1024 * 1024
+        mock_graph.PPTX_CONTENT_TYPE = render.PPTX_CONTENT_TYPE
+        mock_graph.put_small_file.return_value = {"id": "ITEM_ID"}
+        mock_graph.download_pdf.return_value = b"%PDF-1.7 fake"
+        mock_graph.delete_item.return_value = None
+        mock_run.side_effect = lambda cmd, **kw: (
+            (out_dir / "slide-1.png").write_bytes(b"PNG")
+            or subprocess.CompletedProcess(cmd, 0))
+
+        with caplog.at_level(_logging.INFO, logger="aippt.render"):
+            render.render_pptx_to_pngs(
+                pptx_path=str(pptx), out_dir=str(out_dir),
+                token="t", ntid="x", site_id="S", drive_id="D",
+                root_path="r", dpi=150,
+            )
+
+        text = caplog.text.lower()
+        # Upload stage already logged today; keep the assertion as a guard.
+        assert "uploading" in text
+        # New: each remaining stage should leave a trail.
+        assert "downloading pdf" in text, (
+            "render.py should log when it starts the SharePoint PDF download "
+            f"so slow renders can be triaged. caplog:\n{caplog.text}"
+        )
+        assert "pdftoppm" in text, (
+            "render.py should log the pdftoppm invocation. "
+            f"caplog:\n{caplog.text}"
+        )
+        assert "deleted" in text or "cleanup" in text or "deleting" in text, (
+            "render.py should log the staging-folder cleanup so successful "
+            f"DELETEs are visible. caplog:\n{caplog.text}"
+        )
+
+
 class TestRenderPreconditions:
     def test_missing_pptx_raises_filenotfound(self, tmp_path):
         with pytest.raises(FileNotFoundError, match="PPTX not found"):

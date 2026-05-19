@@ -4,9 +4,9 @@ services:
     ports:
       - "${AIPPT_PORT:-8000}:8000"
     volumes:
-      - ./uploads:/app/uploads
-      - ./images:/app/images
-      - ./slides.db:/app/slides.db
+      - ./uploads:/app/data/uploads
+      - ./images:/app/data/images
+      - ./slides.db:/app/data/slides.db
       - ./models.yaml:/app/models.yaml:ro
     environment:
       - AIPPT_VIEW_ONLY=1
@@ -16,9 +16,9 @@ services:
     ports:
       - "${AIPPT_PORT:-8000}:8000"
     volumes:
-      - ./uploads:/app/uploads
-      - ./images:/app/images
-      - ./slides.db:/app/slides.db
+      - ./uploads:/app/data/uploads
+      - ./images:/app/data/images
+      - ./slides.db:/app/data/slides.db
       - ./models.yaml:/app/models.yaml:ro
       - ./gateway.yaml:/app/gateway.yaml:ro
     environment:

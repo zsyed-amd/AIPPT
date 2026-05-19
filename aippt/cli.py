@@ -471,9 +471,10 @@ def cmd_serve(args):
 
     gateway_config = getattr(args, 'gateway_config', None)
     uploads_dir = getattr(args, 'uploads_dir', None) or resolve_path(d["uploads"], base)
+    images_dir = getattr(args, 'images_dir', None) or resolve_path(d["images"], base)
     db_path = args.db if args.db != "slides.db" else resolve_path(d["db"], base)
     view_only = True if getattr(args, 'view_only', False) else None
-    app = create_app(db_path=db_path, gateway_config=gateway_config, uploads_dir=uploads_dir, project_root=base, view_only=view_only)
+    app = create_app(db_path=db_path, gateway_config=gateway_config, uploads_dir=uploads_dir, images_dir=images_dir, project_root=base, view_only=view_only)
     mode = "view-only" if app.state.view_only else "full"
     print(f"Starting AIPPT web UI on http://{args.host}:{args.port} ({mode} mode)")
     uvicorn.run(app, host=args.host, port=args.port)
@@ -1031,15 +1032,17 @@ def _export_images_linux(args, out_dir: str) -> int:
             drive_id=sp_config.drive_id,
             root_path=sp_config.root_path,
         )
-    except graph.GraphError as exc:
-        logger.error("Microsoft Graph error: %s", exc)
-        return 1
     except FileNotFoundError as exc:
         logger.error("%s", exc)
         return 1
     except subprocess.CalledProcessError as exc:
         logger.error("pdftoppm failed: %s", exc)
         return 1
+    # graph.GraphError is intentionally NOT caught here. Callers (ingest_deck,
+    # then the SSE workers) need the typed exception to emit a JSON SSE error
+    # carrying status: 401, which the browser keys off to clear the dead token
+    # and re-prompt for sign-in. Swallowing it into rc=1 loses the type info
+    # and the auto-sign-out hook never fires (R9 regression).
     return 0
 
 
@@ -1546,6 +1549,7 @@ def build_parser():
     p_serve.add_argument("--db", default="slides.db")
     p_serve.add_argument("--gateway-config", default="gateway.yaml", help="Gateway YAML config path for LLM access")
     p_serve.add_argument("--uploads-dir", default="uploads", help="Directory for uploaded files (default: uploads)")
+    p_serve.add_argument("--images-dir", default=None, help="Parent directory for rendered slide images (default: dirs.yaml or 'images'). Set this to a persistent volume in container deployments — otherwise PNGs land in cwd and are lost on pod restart.")
     p_serve.add_argument("--view-only", action="store_true", help="Disable LLM features (also settable via AIPPT_VIEW_ONLY env var; auto-detected when no gateway/API keys)")
 
     # tags (taxonomy management)
@@ -1780,7 +1784,15 @@ def main():
         parser.print_help()
         return 1
 
-    return commands[args.command](args)
+    try:
+        return commands[args.command](args)
+    except graph.GraphError as exc:
+        # CLI-friendly exit for typed Graph errors that propagate up from
+        # cmd_export_images / cmd_ingest. The web layer catches these
+        # earlier and turns them into SSE events; reaching here means the
+        # user ran the CLI directly.
+        logger.error("Microsoft Graph error: %s", exc)
+        return 1
 
 
 if __name__ == "__main__":

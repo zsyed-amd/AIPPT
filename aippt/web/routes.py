@@ -1,4 +1,5 @@
 """API routes for the web UI."""
+import json
 import logging
 import os
 import re
@@ -679,6 +680,20 @@ async def serve_slide_image(slide_id: int, request: Request):
 # ---------------------------------------------------------------------------
 
 
+def _per_deck_images_dir(request: Request, deck_path: str) -> str:
+    """Resolve the per-deck images directory under app.state.images_dir.
+
+    Container deployments override the parent images dir via
+    ``serve --images-dir /app/data/images`` so PNGs land on the data
+    volume; without this helper, ingest_deck falls back to a cwd-relative
+    ``images/`` path that lives in ephemeral container storage and is
+    lost on pod restart.
+    """
+    base = getattr(request.app.state, "images_dir", None) or "images"
+    deck_name = os.path.splitext(os.path.basename(deck_path))[0]
+    return os.path.join(base, deck_name)
+
+
 def _require_images_for_render() -> bool:
     """Whether the render pipeline must succeed for the upload to succeed.
 
@@ -771,6 +786,27 @@ def _ntid_or_400(request: Request):
         return "", JSONResponse({"error": str(exc)}, status_code=400)
 
 
+async def _read_json_body_or_400(request: Request):
+    """Parse the request body as JSON; return ({}, None) when empty,
+    (body, None) on success, or ({}, JSONResponse(400)) for malformed input.
+
+    Without this guard, FastAPI hands ``json.loads`` an arbitrary byte
+    stream — a client sending ``Content-Type: application/x-www-form-urlencoded``
+    triggers ``JSONDecodeError`` and bubbles a 500 to the user. Auth
+    endpoints in particular should never 500 on malformed input; the JS
+    client treats 5xx very differently from 4xx.
+    """
+    raw = await request.body()
+    if not raw:
+        return {}, None
+    try:
+        return json.loads(raw), None
+    except (json.JSONDecodeError, ValueError):
+        return {}, JSONResponse(
+            {"error": "Request body must be valid JSON"}, status_code=400,
+        )
+
+
 def _user_auth_error_status(exc) -> int:
     """Status mapping for /poll and /refresh.
 
@@ -811,7 +847,9 @@ async def auth_microsoft_poll(request: Request):
     Body: ``{"device_code": "..."}``.
     Returns either ``{"status": "pending"}`` or the token-bearing dict.
     """
-    body = await request.json() if await request.body() else {}
+    body, err = await _read_json_body_or_400(request)
+    if err is not None:
+        return err
     device_code = (body or {}).get("device_code", "").strip()
     if not device_code:
         return JSONResponse(
@@ -829,7 +867,9 @@ async def auth_microsoft_poll(request: Request):
 @router.post('/api/auth/microsoft/refresh')
 async def auth_microsoft_refresh(request: Request):
     """Exchange a refresh token for a fresh access token. Unauthenticated."""
-    body = await request.json() if await request.body() else {}
+    body, err = await _read_json_body_or_400(request)
+    if err is not None:
+        return err
     refresh_token = (body or {}).get("refresh_token", "").strip()
     if not refresh_token:
         return JSONResponse(
@@ -902,6 +942,7 @@ async def upload_deck(
         result = ingest_deck(
             deck_path=dest_path,
             db_path=db_path,
+            images_dir=_per_deck_images_dir(request, dest_path),
             generate_tags=generate_tags,
             gateway_config=gateway_config,
             require_images=_require_images_for_render(),
@@ -1103,6 +1144,7 @@ async def create_deck_stream(
             ingest_result = ingest_deck(
                 deck_path=output_path,
                 db_path=db_path,
+                images_dir=_per_deck_images_dir(request, output_path),
                 gateway_config=gateway_config,
                 require_images=_require_images_for_render(),
                 progress_callback=ingest_progress,
@@ -1249,6 +1291,7 @@ async def upload_deck_stream(
             lambda: ingest_deck(
                 deck_path=dest_path,
                 db_path=db_path,
+                images_dir=_per_deck_images_dir(request, dest_path),
                 generate_tags=generate_tags,
                 gateway_config=gateway_config,
                 require_images=_require_images_for_render(),

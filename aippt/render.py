@@ -122,12 +122,17 @@ def render_pptx_to_pngs(
                 f"Graph upload response missing 'id': {response!r}")
         item_path = f"/sites/{site_id}/drives/{drive_id}/items/{item_id}"
 
+        logger.info("Downloading PDF from SharePoint (item %s)", item_id)
         pdf_bytes = graph.download_pdf(item_path, token=token)
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             tmp.write(pdf_bytes)
             pdf_tmp = tmp.name
         try:
             prefix = str(Path(out_dir) / "slide")
+            logger.info(
+                "Running pdftoppm on %d-byte PDF at %d dpi -> %s",
+                len(pdf_bytes), dpi, prefix,
+            )
             subprocess.run(
                 ["pdftoppm", "-png", "-r", str(dpi), pdf_tmp, prefix],
                 check=True,
@@ -144,6 +149,7 @@ def render_pptx_to_pngs(
         if item_path:
             try:
                 graph.delete_item(item_path, token=token)
+                logger.info("Deleted staged PPTX %s", item_path)
             except graph.GraphError as exc:
                 logger.warning(
                     "Failed to delete staged PPTX %s: %s", item_path, exc)

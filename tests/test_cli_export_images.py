@@ -99,6 +99,27 @@ class TestLinuxBranch:
         assert rc != 0
         assert "sharepoint" in caplog.text.lower()
 
+    @patch("aippt.cli.sys.platform", "linux")
+    @patch("aippt.cli.load_sharepoint_config")
+    @patch("aippt.cli.render.render_pptx_to_pngs")
+    def test_linux_graph_error_propagates(
+        self, mock_render, mock_load_sp, fake_deck, tmp_path, monkeypatch,
+    ):
+        """GraphError from the render module must NOT be caught and squashed
+        into rc=1 — it has to propagate so ingest_deck can re-raise it and
+        the SSE worker can emit ``{status: <code>}`` for the JS sign-out hook.
+        Regression guard for R9.
+        """
+        from aippt import graph
+        monkeypatch.setenv("MS_ACCESS_TOKEN", "tok")
+        mock_load_sp.return_value = SharePointConfig("S", "D", "r")
+        mock_render.side_effect = graph.GraphError(
+            401, "InvalidAuthenticationToken", "Token expired",
+        )
+        with pytest.raises(graph.GraphError) as caught:
+            cli.cmd_export_images(_make_args(fake_deck, tmp_path / "out"))
+        assert caught.value.status_code == 401
+
 
 class TestWindowsBranch:
     @patch("aippt.cli.sys.platform", "win32")
