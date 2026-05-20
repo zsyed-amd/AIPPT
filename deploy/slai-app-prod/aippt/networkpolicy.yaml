@@ -18,11 +18,11 @@ spec:
     - Ingress
     - Egress
   ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: ingress-nginx
-      ports:
+    # Match the pattern used by other slai-app-prod apps (dremio-cli,
+    # hello-demo, dcgpu-hub, harbor-cli-proxy): no `from:` restriction
+    # so the nginx-ingress controller can reach the pod regardless of
+    # which namespace it lives in on this cluster.
+    - ports:
         - protocol: TCP
           port: 8000
   egress:
