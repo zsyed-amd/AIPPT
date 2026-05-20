@@ -19,6 +19,7 @@ COPY pyproject.toml .
 COPY dirs.yaml .
 COPY gateway.yaml gateway.yaml
 COPY models.yaml models.yaml
+COPY templates.yaml templates.yaml
 
 # Create data directory for SQLite, uploads, and images (writable via fsGroup)
 RUN mkdir -p /app/data/uploads /app/data/images /app/data/backups && \

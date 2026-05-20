@@ -30,6 +30,7 @@ from aippt.catalog import (
     rename_tag,
     catalog_deck,
     get_deck_by_id,
+    delete_deck,
     record_edit,
 )
 from aippt.export import export_csv
@@ -1399,3 +1400,115 @@ async def download_deck(deck_id: int, request: Request):
         media_type='application/vnd.openxmlformats-officedocument.presentationml.presentation',
         headers={'Content-Disposition': f'attachment; filename="{download_name}.pptx"'},
     )
+
+
+@router.get('/api/logs')
+async def get_logs(request: Request):
+    """API: return recent in-memory application log records.
+
+    Captures land in the ring buffer attached during ``create_app``; this
+    endpoint is read-only triage, so it works in view-only deployments and
+    requires a Bearer token only to keep the unauthenticated surface area
+    small. Bearer tokens themselves are scrubbed by
+    ``install_authorization_scrub`` before they reach the buffer.
+
+    Query params: ``limit`` (1-2000, default 200), ``level`` (DEBUG/INFO/
+    WARNING/ERROR/CRITICAL), ``since`` (record id from a prior poll),
+    ``logger_prefix`` (filter by logger name prefix, e.g. ``aippt``).
+    """
+    if not _extract_bearer_token(request):
+        return JSONResponse(
+            {"error": "Microsoft sign-in required to view logs."},
+            status_code=401,
+        )
+
+    buffer = getattr(request.app.state, "log_buffer", None)
+    if buffer is None:
+        return JSONResponse(
+            {"error": "Log buffer not configured."},
+            status_code=503,
+        )
+
+    try:
+        limit = int(request.query_params.get("limit", "200"))
+    except ValueError:
+        limit = 200
+    limit = max(1, min(limit, buffer.capacity))
+
+    level = request.query_params.get("level")
+    logger_prefix = request.query_params.get("logger_prefix")
+    since_raw = request.query_params.get("since")
+    since: int | None = None
+    if since_raw:
+        try:
+            since = int(since_raw)
+        except ValueError:
+            since = None
+
+    records = buffer.snapshot(
+        limit=limit, level=level, since=since,
+        logger_prefix=logger_prefix,
+    )
+    next_cursor = records[-1]["id"] if records else since
+    return {
+        "capacity": buffer.capacity,
+        "count": len(records),
+        "next_cursor": next_cursor,
+        "records": records,
+    }
+
+
+@router.delete('/api/decks/{deck_id}')
+async def remove_deck(deck_id: int, request: Request):
+    """API: Delete a deck (cascade) and purge its rendered images.
+
+    Bearer-token gated to match upload. ``view_only`` deployments reject
+    with 403. ``purge_images=false`` keeps the PNG dir; default purges.
+    """
+    if getattr(request.app.state, "view_only", False):
+        return JSONResponse(
+            {"error": "Deck delete is disabled in view-only mode"},
+            status_code=403,
+        )
+    if not _extract_bearer_token(request):
+        return JSONResponse(
+            {"error": "Microsoft sign-in required to delete decks."},
+            status_code=401,
+        )
+
+    db_path = request.app.state.db_path
+    images_base = request.app.state.images_dir
+
+    deck = get_deck_by_id(deck_id, db_path)
+    if deck is None:
+        return JSONResponse({"error": "Deck not found"}, status_code=404)
+
+    purge = request.query_params.get("purge_images", "true").lower() not in (
+        "false", "0", "no",
+    )
+
+    info = delete_deck(deck_id, db_path=db_path)
+    if info is None:
+        return JSONResponse({"error": "Deck not found"}, status_code=404)
+
+    purged_dir = None
+    if purge:
+        # Per-deck images live at {images_dir}/{deck_name}/. delete_deck
+        # already removed the DB rows; clean the matching PNG dir so a
+        # subsequent re-upload doesn't pile up under an ephemeral volume.
+        candidate = os.path.join(images_base, deck["name"])
+        if os.path.isdir(candidate):
+            import shutil as _shutil
+            _shutil.rmtree(candidate, ignore_errors=True)
+            purged_dir = candidate
+
+    return {
+        "deck_id": deck_id,
+        "name": info["name"],
+        "display_name": display_name(info["name"]),
+        "slide_count": info["slide_count"],
+        "tag_count": info["tag_count"],
+        "section_count": info["section_count"],
+        "images_purged": purged_dir is not None,
+        "images_dir": purged_dir,
+    }

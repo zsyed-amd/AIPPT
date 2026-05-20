@@ -197,6 +197,61 @@ class TestRenderCleanupOnFailure:
         assert len(pngs) == 1
 
 
+class TestRenderOutputFilenames:
+    """Output PNGs must match catalog_deck's expected pattern (Slide{i}.png).
+
+    pdftoppm writes `slide-NN.png` (lowercase, dash-separated, zero-padded).
+    catalog.py looks for `Slide{i}.png` (capital S, no dash, no padding) to
+    match the Windows PowerShell export. Without the rename, every Linux-
+    rendered deck cataloged with image_path=None and the UI shows "No image".
+    """
+
+    @patch("aippt.render.shutil.which", return_value="/usr/bin/pdftoppm")
+    @patch("aippt.render.subprocess.run")
+    @patch("aippt.render.graph")
+    def test_renames_pdftoppm_output_to_catalog_pattern(
+        self, mock_graph, mock_run, _which, tmp_path,
+    ):
+        pptx = tmp_path / "deck.pptx"
+        pptx.write_bytes(b"x" * 1024)
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+
+        mock_graph.SMALL_FILE_LIMIT = 4 * 1024 * 1024
+        mock_graph.PPTX_CONTENT_TYPE = render.PPTX_CONTENT_TYPE
+        mock_graph.put_small_file.return_value = {"id": "ITEM_ID"}
+        mock_graph.download_pdf.return_value = b"%PDF"
+        mock_graph.delete_item.return_value = None
+
+        # Simulate pdftoppm's zero-padded output for a 12-slide deck.
+        def _fake_run(cmd, **kw):
+            for i in range(1, 13):
+                (out_dir / f"slide-{i:02d}.png").write_bytes(b"PNG")
+            return subprocess.CompletedProcess(cmd, 0, b"", b"")
+        mock_run.side_effect = _fake_run
+
+        pngs = render.render_pptx_to_pngs(
+            pptx_path=str(pptx), out_dir=str(out_dir),
+            token="t", ntid="x", site_id="S", drive_id="D",
+            root_path="r",
+        )
+
+        assert len(pngs) == 12
+        # Filenames must match what catalog_deck globs for.
+        for i, p in enumerate(pngs, start=1):
+            assert p.name == f"Slide{i}.png", (
+                f"render output {p.name!r} won't be found by catalog_deck, "
+                f"which globs for Slide{i}.png"
+            )
+            assert p.exists(), f"renamed file {p} should exist on disk"
+        # Originals must be gone (no orphan dash-named copies left behind).
+        leftovers = sorted(out_dir.glob("slide-*.png"))
+        assert leftovers == [], (
+            f"expected dash-named pdftoppm output to be renamed away; "
+            f"found {leftovers}"
+        )
+
+
 class TestRenderObservability:
     """Each pipeline stage logs an INFO line so a slow render can be triaged.
 

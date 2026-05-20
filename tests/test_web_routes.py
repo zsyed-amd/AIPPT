@@ -750,3 +750,121 @@ class TestNtidValidation:
         )
         assert resp.status_code == 400
         assert "ntid" in resp.json()["error"].lower()
+
+
+class TestDeleteDeckRoute:
+    """DELETE /api/decks/{id} — bearer-gated, cascades, purges images.
+
+    The UI deliberately hides delete, so the API is the only way to clean
+    up test uploads on an ephemeral pod without `kubectl exec`.
+    """
+
+    def test_delete_removes_deck_and_returns_counts(self, client, db_path):
+        # Fixture cataloged a 1-slide deck as id=1.
+        resp = client.delete(
+            "/api/decks/1",
+            headers={"Authorization": "Bearer tok"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["deck_id"] == 1
+        assert body["slide_count"] == 1
+        assert "name" in body and "display_name" in body
+
+        # Deck must be gone from list.
+        listing = client.get("/api/decks").json()
+        assert all(d["id"] != 1 for d in listing)
+
+    def test_delete_requires_bearer_token(self, client):
+        resp = client.delete("/api/decks/1")
+        assert resp.status_code == 401
+        assert "sign-in" in resp.json()["error"].lower()
+
+    def test_delete_missing_returns_404(self, client):
+        resp = client.delete(
+            "/api/decks/999",
+            headers={"Authorization": "Bearer tok"},
+        )
+        assert resp.status_code == 404
+
+    def test_delete_rejected_in_view_only(self, tmp_path, deck_path):
+        db_path = str(tmp_path / "vo.db")
+        catalog_deck(deck_path, db_path=db_path)
+        app = create_app(
+            db_path=db_path,
+            uploads_dir=str(tmp_path / "u"),
+            view_only=True,
+        )
+        vo_client = TestClient(app)
+        resp = vo_client.delete(
+            "/api/decks/1",
+            headers={"Authorization": "Bearer tok"},
+        )
+        assert resp.status_code == 403
+        assert "view-only" in resp.json()["error"].lower()
+
+    def test_delete_purges_images_dir_by_default(self, tmp_path, deck_path):
+        db_path = str(tmp_path / "p.db")
+        images_dir = str(tmp_path / "images")
+        os.makedirs(images_dir, exist_ok=True)
+        catalog_deck(deck_path, db_path=db_path)
+
+        # Simulate the per-deck PNG dir produced by the render path.
+        conn = get_db(db_path)
+        deck_row = conn.execute(
+            "SELECT name FROM decks WHERE id = 1"
+        ).fetchone()
+        conn.close()
+        deck_images = os.path.join(images_dir, deck_row["name"])
+        os.makedirs(deck_images)
+        with open(os.path.join(deck_images, "Slide1.png"), "wb") as fh:
+            fh.write(b"PNG")
+
+        app = create_app(
+            db_path=db_path,
+            uploads_dir=str(tmp_path / "u"),
+            images_dir=images_dir,
+        )
+        purge_client = TestClient(app)
+        resp = purge_client.delete(
+            "/api/decks/1",
+            headers={"Authorization": "Bearer tok"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["images_purged"] is True
+        assert not os.path.isdir(deck_images), (
+            "delete with default purge_images=true must rmtree the deck's "
+            "image directory so an ephemeral /app/data doesn't fill up"
+        )
+
+    def test_delete_keeps_images_when_purge_false(self, tmp_path, deck_path):
+        db_path = str(tmp_path / "k.db")
+        images_dir = str(tmp_path / "images")
+        os.makedirs(images_dir, exist_ok=True)
+        catalog_deck(deck_path, db_path=db_path)
+
+        conn = get_db(db_path)
+        deck_row = conn.execute(
+            "SELECT name FROM decks WHERE id = 1"
+        ).fetchone()
+        conn.close()
+        deck_images = os.path.join(images_dir, deck_row["name"])
+        os.makedirs(deck_images)
+        with open(os.path.join(deck_images, "Slide1.png"), "wb") as fh:
+            fh.write(b"PNG")
+
+        app = create_app(
+            db_path=db_path,
+            uploads_dir=str(tmp_path / "u"),
+            images_dir=images_dir,
+        )
+        keep_client = TestClient(app)
+        resp = keep_client.delete(
+            "/api/decks/1?purge_images=false",
+            headers={"Authorization": "Bearer tok"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["images_purged"] is False
+        assert os.path.isdir(deck_images), (
+            "purge_images=false must leave the deck's PNG dir intact"
+        )

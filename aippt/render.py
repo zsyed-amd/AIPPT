@@ -143,7 +143,17 @@ def render_pptx_to_pngs(
             except OSError:
                 pass
 
-        pngs = sorted(Path(out_dir).glob("slide-*.png"))
+        # pdftoppm writes `slide-NN.png` (1-based, zero-padded to the page
+        # count). catalog_deck looks for `Slide{i}.png` (no dash, no padding)
+        # to match the Windows PowerShell export output. Rename in sorted
+        # order so the Linux render path produces files the catalog can find.
+        raw_pngs = sorted(Path(out_dir).glob("slide-*.png"))
+        pngs: list[Path] = []
+        for i, src in enumerate(raw_pngs, start=1):
+            dst = Path(out_dir) / f"Slide{i}.png"
+            if src != dst:
+                src.replace(dst)
+            pngs.append(dst)
         return pngs
     finally:
         if item_path:

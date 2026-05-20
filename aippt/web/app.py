@@ -1,12 +1,14 @@
 """FastAPI web application."""
 import logging
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 
 from aippt.config import load_sharepoint_config
+from aippt.web.log_buffer import install_ring_buffer
 from aippt.web.logging_filter import install_authorization_scrub
 from aippt.web.routes import router
 
@@ -54,8 +56,23 @@ def create_app(db_path: str = "slides.db", gateway_config: str = None, uploads_d
     os.makedirs(uploads_dir, exist_ok=True)
     os.makedirs(images_dir, exist_ok=True)
     # Strip Bearer tokens from any log line before it leaves the process.
+    # Order matters: scrub installs filters on the root logger that mutate
+    # records in place; the ring buffer then attaches as a root handler so
+    # it captures already-scrubbed text.
     install_authorization_scrub()
-    app = FastAPI(title="AIPPT", version="2.0.0")
+    log_buffer = install_ring_buffer()
+
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        # uvicorn.run calls logging.config.dictConfig AFTER create_app,
+        # which wipes our handler off uvicorn.access / uvicorn.error.
+        # Re-install on startup so the HTTP access log lands in the ring
+        # buffer. install_ring_buffer is idempotent.
+        install_ring_buffer()
+        yield
+
+    app = FastAPI(title="AIPPT", version="2.0.0", lifespan=_lifespan)
+    app.state.log_buffer = log_buffer
     app.state.db_path = db_path
     app.state.gateway_config = gateway_config
     app.state.uploads_dir = uploads_dir
@@ -85,4 +102,5 @@ def create_app(db_path: str = "slides.db", gateway_config: str = None, uploads_d
         app.mount("/docs", StaticFiles(directory=str(docs_dir), html=True), name="docs")
 
     app.include_router(router)
+
     return app
