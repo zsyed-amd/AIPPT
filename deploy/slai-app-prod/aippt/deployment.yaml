@@ -38,6 +38,7 @@ spec:
           securityContext:
             privileged: false
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
           ports:
@@ -49,6 +50,13 @@ spec:
               value: aippt
             - name: AIPPT_VIEW_ONLY
               value: "0"
+            # readOnlyRootFilesystem: redirect $HOME (used by ~/.cache lookups in
+            # aippt/builder.py and any third-party libs) into the writable
+            # /app/data emptyDir, and skip .pyc writes on the read-only /app tree.
+            - name: HOME
+              value: /app/data
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
             - name: AMD_LLM_KEY
               valueFrom:
                 secretKeyRef:
