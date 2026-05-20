@@ -34,7 +34,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: app
-          image: mkmhub.amd.com/hw-slaiapp-dev/aippt:5c3ec651a9e36fc9aa3ef75a11193375cf83bc0a
+          image: mkmhub.amd.com/hw-slaiapp-dev/aippt:d0687906da402300c593a8416f6de0994d000fec
           securityContext:
             privileged: false
             allowPrivilegeEscalation: false
