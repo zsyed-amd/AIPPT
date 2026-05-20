@@ -6,14 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-05-20 — Linux Image Rendering via Microsoft Graph
+
 ### Added
 
 - Stat callout cards with shadow and rounded corners
 - URL auto-linking in slide content (bare URLs converted to hyperlinks)
+- Microsoft Graph render pipeline for Linux/containerized deployments: PPTX → SharePoint → `?format=pdf` → `pdftoppm` → per-slide PNGs (`aippt/graph.py`, `aippt/render.py`). Removes the PowerPoint COM dependency for image export on non-Windows hosts.
+- Device-code Microsoft sign-in in the web UI (`static/js/ms-auth.js`) — tokens live only in browser `localStorage`; the server is stateless and accepts `Authorization: Bearer` per request.
+- `X-AIPPT-NTID` header allowlist validation (`^[A-Za-z0-9._-]+$`) on upload/create endpoints — rejects path-traversal and shell-metacharacter values with a 400 before reaching the SharePoint staging path.
+- `MS_ACCESS_TOKEN` env var path for the CLI `export-images` command on Linux.
+- `--images-dir` flag on `aippt serve`, threaded through all `ingest_deck` call sites so the Dockerfile/K8s `/app/data/images` path is honored instead of falling back to a cwd-relative `images/` (which was invisible to a PVC mounted at `/app/data` and lost on pod restart).
+- `gateway.yaml` `sharepoint:` block (`render_site_id`, `render_drive_id`, optional `render_root_path`) loaded by `aippt/config.py`.
+- `docs/sharepoint-setup.md` — provisioning, IDs, permissions, and verification for the staging library.
+- `poppler-utils` installed in the Dockerfile (provides `pdftoppm`).
+- Live integration tests at `tests/test_graph_live.py`, opt-in via `-m live` and `MS_ACCESS_TOKEN` (+ `AIPPT_SP_SITE_ID` / `AIPPT_SP_DRIVE_ID` for the end-to-end render check).
+- `AuthorizationScrubFilter` on uvicorn loggers — preventatively rewrites `Bearer <token>` → `Bearer <redacted>` in case a future debug log call ever touches an auth header.
+- Per-stage observability logging in `aippt/render.py` (Uploading / Downloading PDF / Running pdftoppm / Deleted staged) so slow renders can be triaged from the server log.
 
 ### Changed
 
 - Two-column layout alignment improved for density-aware content distribution
+- Web `/api/decks/create` and `/api/decks/upload[-stream]` now require `Authorization: Bearer <token>`; Linux deployments without SharePoint configuration refuse image-render requests with a clear error instead of failing later in the pipeline.
+- Microsoft auth endpoints (`/api/auth/microsoft/start|poll|refresh`) surface upstream Graph errors with their status code preserved (4xx pass-through on `/start`; 5xx → 502 on `/poll`/`/refresh` while keeping 4xx → 401 for the existing UI contract).
+- `/api/auth/microsoft/poll` and `/refresh` return **400** on malformed/non-JSON request bodies (previously 500 via uncaught `JSONDecodeError`).
+- Web UI `createDeck()` flow goes through `msAuth.fetchWithAuth` (Bearer token + `X-AIPPT-NTID` attached, one-shot refresh-on-401). Both SSE handlers (`handleUploadEvent`, `handleCreateEvent`) now sign the user out on in-band `event: error data: {"status": 401, ...}` payloads, so an expired-token failure mid-stream surfaces correctly instead of leaving stale tokens in `localStorage`.
+- `aippt.cli._export_images_linux` re-raises `graph.GraphError` instead of catching-and-returning-int, so typed auth failures propagate through `ingest_deck` to the SSE worker's `except graph.GraphError` branch and reach the browser as `{"status": 401, ...}`.
+- Device-code modal renders user codes as text (XSS-safe).
+- Device-code poll distinguishes `slow_down` from `authorization_pending` and backs off rather than tight-looping.
 
 ## [3.4.0] - 2026-05-15 — AMD Instinct Design System Web UI
 

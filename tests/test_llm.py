@@ -413,6 +413,74 @@ class TestGenerateText:
         with pytest.raises(RuntimeError, match="API down"):
             llm.generate_text("prompt")
 
+    @patch("aippt.llm.openai.Client")
+    def test_openai_retries_with_max_completion_tokens_on_max_tokens_rejection(
+        self, mock_client_cls, models_yaml,
+    ):
+        """Newer OpenAI / Azure OpenAI models reject ``max_tokens`` and
+        require ``max_completion_tokens`` (introduced with o1; required on
+        gpt-4o-2024-12-01+). When the API returns that specific 400, the
+        client must retry once with the new field name instead of bubbling
+        the error up — otherwise every gateway-routed call to a current
+        model fails."""
+        from openai import BadRequestError
+        import httpx
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+        mock_response = MagicMock()
+        mock_response.choices[0].message.content = "fallback worked"
+        # First call fails with the canonical Azure OpenAI error; second
+        # call (with max_completion_tokens) succeeds.
+        request = httpx.Request("POST", "https://example.invalid/v1/chat")
+        response = httpx.Response(400, request=request)
+        err = BadRequestError(
+            message=("Unsupported parameter: 'max_tokens' is not supported "
+                     "with this model. Use 'max_completion_tokens' instead."),
+            response=response,
+            body={"error": {"code": "unsupported_parameter",
+                            "param": "max_tokens"}},
+        )
+        mock_client.chat.completions.create.side_effect = [err, mock_response]
+
+        llm = LLMClient(model="gpt-4o", api_key="key")
+        result = llm.generate_text("hello", max_tokens=42)
+
+        assert result == "fallback worked"
+        assert mock_client.chat.completions.create.call_count == 2
+        # First attempt used max_tokens, second used max_completion_tokens
+        first = mock_client.chat.completions.create.call_args_list[0].kwargs
+        second = mock_client.chat.completions.create.call_args_list[1].kwargs
+        assert first.get("max_tokens") == 42
+        assert "max_completion_tokens" not in first
+        assert second.get("max_completion_tokens") == 42
+        assert "max_tokens" not in second
+
+    @patch("aippt.llm.openai.Client")
+    def test_openai_does_not_retry_on_unrelated_400(
+        self, mock_client_cls, models_yaml,
+    ):
+        """Only the max_tokens/max_completion_tokens swap should trigger the
+        retry. Other 400s (invalid model, rate limit, etc.) must propagate
+        immediately."""
+        from openai import BadRequestError
+        import httpx
+        mock_client = MagicMock()
+        mock_client_cls.return_value = mock_client
+        request = httpx.Request("POST", "https://example.invalid/v1/chat")
+        response = httpx.Response(400, request=request)
+        err = BadRequestError(
+            message="Model 'gpt-9000' not found",
+            response=response,
+            body={"error": {"code": "model_not_found"}},
+        )
+        mock_client.chat.completions.create.side_effect = err
+
+        llm = LLMClient(model="gpt-4o", api_key="key")
+        with pytest.raises(BadRequestError):
+            llm.generate_text("hello")
+        # Must NOT have retried
+        assert mock_client.chat.completions.create.call_count == 1
+
 
 # ---------------------------------------------------------------------------
 # TestGenerateTextWithImage

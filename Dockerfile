@@ -1,5 +1,11 @@
 FROM python:3.11-slim
 
+# pdftoppm (from poppler-utils) is required by the SharePoint render pipeline:
+# PPTX -> Graph -> PDF -> pdftoppm -> PNGs. See aippt/render.py.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Install dependencies
@@ -19,4 +25,4 @@ RUN mkdir -p /app/data/uploads /app/data/images /app/data/backups && \
 
 EXPOSE 8000
 
-ENTRYPOINT ["python", "aippt.py", "serve", "--host", "0.0.0.0", "--port", "8000", "--db", "/app/data/slides.db", "--uploads-dir", "/app/data/uploads"]
+ENTRYPOINT ["python", "aippt.py", "serve", "--host", "0.0.0.0", "--port", "8000", "--db", "/app/data/slides.db", "--uploads-dir", "/app/data/uploads", "--images-dir", "/app/data/images"]

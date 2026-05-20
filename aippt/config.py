@@ -473,6 +473,112 @@ def resolve_path(relative_path: str, base_dir: Optional[str] = None) -> str:
     return os.path.normpath(os.path.join(base, relative_path))
 
 
+# ---------------------------------------------------------------------------
+# SharePoint configuration (gateway.yaml `sharepoint` block)
+# ---------------------------------------------------------------------------
+
+DEFAULT_SHAREPOINT_ROOT_PATH = "AIPPT/render-staging"
+
+
+@dataclass(frozen=True)
+class SharePointConfig:
+    """Resolved SharePoint coordinates for the Graph render staging area."""
+    site_id: str
+    drive_id: str
+    root_path: str
+
+
+def _resolve_sp_value(
+    block: dict, key: str, env_key: str, *, source: str,
+) -> Optional[str]:
+    """Resolve `key` from the sharepoint block, with env-var indirection.
+
+    Returns the literal value of `block[key]`, or `os.environ[block[env_key]]`
+    if `env_key` is set instead. Raises ValueError if the env var is unset.
+    Returns None if neither is provided (caller decides if that's an error).
+    """
+    if key in block and block[key] not in (None, ""):
+        return str(block[key])
+    if env_key in block and block[env_key]:
+        env_var = str(block[env_key])
+        value = os.environ.get(env_var, "")
+        if not value:
+            raise ValueError(
+                f"{source}: sharepoint.{env_key} points at env var "
+                f"'{env_var}' which is unset or empty."
+            )
+        return value
+    return None
+
+
+def load_sharepoint_config(config_path: str) -> Optional[SharePointConfig]:
+    """Load SharePoint render staging coordinates from gateway.yaml.
+
+    The expected YAML shape is:
+
+        sharepoint:
+          render_site_id: "..."          # or render_site_id_env: ENV_VAR
+          render_drive_id: "..."         # or render_drive_id_env: ENV_VAR
+          render_root_path: "AIPPT/render-staging"   # optional
+
+    Returns:
+        SharePointConfig if the block is present and complete.
+        None if the file does not exist OR the file has no `sharepoint` block.
+
+    Raises:
+        ValueError: the block exists but is malformed (not a mapping, missing
+            required field, or env-var indirection points at an unset env var).
+    """
+    p = Path(config_path)
+    if not p.exists():
+        return None
+
+    if not HAS_YAML:
+        raise RuntimeError(
+            "PyYAML is required to load SharePoint configuration."
+        )
+
+    try:
+        with p.open(encoding="utf-8") as fh:
+            data = yaml.safe_load(fh)
+    except Exception as exc:
+        raise ValueError(f"Failed to parse {config_path}: {exc}") from exc
+
+    if not isinstance(data, dict) or "sharepoint" not in data:
+        return None
+
+    block = data["sharepoint"]
+    if not isinstance(block, dict):
+        raise ValueError(
+            f"{config_path}: 'sharepoint' must be a mapping, got "
+            f"{type(block).__name__}."
+        )
+
+    site_id = _resolve_sp_value(
+        block, "render_site_id", "render_site_id_env", source=config_path,
+    )
+    if not site_id:
+        raise ValueError(
+            f"{config_path}: sharepoint block is missing render_site_id "
+            "(or render_site_id_env)."
+        )
+
+    drive_id = _resolve_sp_value(
+        block, "render_drive_id", "render_drive_id_env", source=config_path,
+    )
+    if not drive_id:
+        raise ValueError(
+            f"{config_path}: sharepoint block is missing render_drive_id "
+            "(or render_drive_id_env)."
+        )
+
+    root_path = block.get("render_root_path") or DEFAULT_SHAREPOINT_ROOT_PATH
+
+    return SharePointConfig(
+        site_id=site_id, drive_id=drive_id, root_path=str(root_path),
+    )
+
+
 def _create_default_dirs_yaml(path: str) -> None:
     """Write a dirs.yaml with default values."""
     content = (

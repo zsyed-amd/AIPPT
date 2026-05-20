@@ -12,3 +12,22 @@ providers:
     path: "/OpenAI"
   google:
     path: "/VertexAI"
+
+# SharePoint coordinates for the Graph-based Linux render pipeline
+# (PPTX -> SharePoint -> ?format=pdf -> pdftoppm -> PNGs).
+# Only required on Linux/containerized deployments where PowerPoint COM
+# is unavailable. Either set the values inline OR reference an env var
+# via the *_env keys (handy for secrets in CI).
+sharepoint:
+  # Graph site ID, e.g. "contoso.sharepoint.com,<site-guid>,<web-guid>"
+  render_site_id: "REPLACE_WITH_SITE_ID"
+  # render_site_id_env: "AIPPT_SP_SITE_ID"
+
+  # Graph drive ID for the document library, e.g. "b!xxxxxxxx..."
+  render_drive_id: "REPLACE_WITH_DRIVE_ID"
+  # render_drive_id_env: "AIPPT_SP_DRIVE_ID"
+
+  # Optional: folder path inside the drive. Defaults to "AIPPT/render-staging".
+  # Per-user subfolders (NTID) and per-job filenames (UUID) are appended
+  # automatically.
+  render_root_path: "AIPPT/render-staging"

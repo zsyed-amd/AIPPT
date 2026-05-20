@@ -40,13 +40,21 @@ def app(tmp_path):
     """Create a fresh app with isolated db and uploads_dir."""
     db_path = str(tmp_path / "test.db")
     uploads_dir = str(tmp_path / "uploads")
-    return create_app(db_path=db_path, uploads_dir=uploads_dir)
+    # Force view_only=False so the upload endpoint isn't 403-gated by the
+    # PRD-A view-only block. A test Bearer token is supplied in _upload.
+    return create_app(db_path=db_path, uploads_dir=uploads_dir, view_only=False)
 
 
 @pytest.fixture
 def client(app):
     """Starlette TestClient wrapping the app."""
     return TestClient(app)
+
+
+# Default Bearer header for every upload — PRD A requires Microsoft sign-in
+# for the Linux Graph render path. Tests don't actually hit Graph (export is
+# mocked) but the upload endpoint requires the header to clear its 401 gate.
+_TEST_AUTH = {"Authorization": "Bearer test-ms-token"}
 
 
 def _upload(client, filename="my_deck.pptx", num_slides=3, generate_tags=False):
@@ -59,6 +67,7 @@ def _upload(client, filename="my_deck.pptx", num_slides=3, generate_tags=False):
         "/api/decks/upload",
         files={"file": (filename, buf, PPTX_MIME)},
         data=data,
+        headers=_TEST_AUTH,
     )
 
 
@@ -69,7 +78,7 @@ def _upload(client, filename="my_deck.pptx", num_slides=3, generate_tags=False):
 
 class TestUploadDeck:
 
-    @patch("aippt.ingest.cmd_export_images", return_value=1)
+    @patch("aippt.ingest.cmd_export_images", return_value=0)
     def test_upload_valid_pptx(self, _mock_export, client):
         """Upload a valid PPTX and verify the response fields and deck list."""
         response = _upload(client, num_slides=3)
@@ -88,8 +97,8 @@ class TestUploadDeck:
         # Slide count matches what we put in
         assert data["slide_count"] == 3
 
-        # Image export was unavailable (mocked to fail)
-        assert data["images_exported"] is False
+        # Image export succeeded (mocked)
+        assert data["images_exported"] is True
         assert data["tags_generated"] is False
 
         # Deck appears in the list endpoint
@@ -111,7 +120,7 @@ class TestUploadDeck:
         data = response.json()
         assert "error" in data
 
-    @patch("aippt.ingest.cmd_export_images", return_value=1)
+    @patch("aippt.ingest.cmd_export_images", return_value=0)
     def test_upload_duplicate(self, _mock_export, client):
         """Uploading the same PPTX bytes twice should succeed both times."""
         buf = make_pptx(num_slides=2)
@@ -121,6 +130,7 @@ class TestUploadDeck:
         resp1 = client.post(
             "/api/decks/upload",
             files={"file": ("deck.pptx", io.BytesIO(pptx_bytes), PPTX_MIME)},
+            headers=_TEST_AUTH,
         )
         assert resp1.status_code == 200, resp1.text
         id1 = resp1.json()["id"]
@@ -129,6 +139,7 @@ class TestUploadDeck:
         resp2 = client.post(
             "/api/decks/upload",
             files={"file": ("deck.pptx", io.BytesIO(pptx_bytes), PPTX_MIME)},
+            headers=_TEST_AUTH,
         )
         assert resp2.status_code == 200, resp2.text
         id2 = resp2.json()["id"]
@@ -159,7 +170,7 @@ class TestUploadDeck:
         assert data["tags_generated"] is True
         assert "tags generated" in data["message"]
 
-    @patch("aippt.ingest.cmd_export_images", return_value=1)
+    @patch("aippt.ingest.cmd_export_images", return_value=0)
     def test_upload_without_generate_tags_flag(self, _mock_export, client):
         """Default upload without generate_tags should not generate tags."""
         response = _upload(client, num_slides=1)
@@ -176,13 +187,14 @@ class TestUploadDeck:
 
 class TestDownloadDeck:
 
-    @patch("aippt.ingest.cmd_export_images", return_value=1)
+    @patch("aippt.ingest.cmd_export_images", return_value=0)
     def _upload_pptx(self, client, _mock_export, filename: str = "test_deck.pptx", num_slides: int = 1):
         """Helper: upload a PPTX and return the parsed response JSON."""
         buf = make_pptx(num_slides=num_slides)
         resp = client.post(
             "/api/decks/upload",
             files={"file": (filename, buf, PPTX_MIME)},
+            headers=_TEST_AUTH,
         )
         assert resp.status_code == 200, resp.text
         return resp.json()
@@ -281,9 +293,10 @@ class TestUploadStream:
             "/api/decks/upload-stream",
             files={"file": (filename, buf, PPTX_MIME)},
             data=data,
+            headers=_TEST_AUTH,
         )
 
-    @patch("aippt.ingest.cmd_export_images", return_value=1)
+    @patch("aippt.ingest.cmd_export_images", return_value=0)
     def test_stream_returns_sse_events(self, _mock_export, client):
         """Upload via SSE endpoint; verify content-type and presence of key events."""
         response = self._stream_upload(client)
@@ -308,7 +321,7 @@ class TestUploadStream:
         # Catalog step must also appear
         assert "catalog" in steps
 
-    @patch("aippt.ingest.cmd_export_images", return_value=1)
+    @patch("aippt.ingest.cmd_export_images", return_value=0)
     def test_stream_complete_has_deck_info(self, _mock_export, client):
         """The complete SSE event must carry deck_id, deck_name, and slide_count."""
         response = self._stream_upload(client, num_slides=4)
@@ -357,3 +370,33 @@ class TestUploadStream:
         assert response.status_code == 400, response.text
         data = response.json()
         assert "error" in data
+
+    def test_stream_without_bearer_returns_401(self, client):
+        """Missing Bearer token must return 401 JSON (not SSE)."""
+        buf = make_pptx(num_slides=1)
+        response = client.post(
+            "/api/decks/upload-stream",
+            files={"file": ("deck.pptx", buf, PPTX_MIME)},
+        )
+
+        assert response.status_code == 401, response.text
+        data = response.json()
+        assert "sign-in" in data["error"].lower() or "microsoft" in data["error"].lower()
+
+    def test_stream_in_view_only_returns_403(self, tmp_path):
+        """View-only deployments must block the SSE upload endpoint with 403."""
+        db_path = str(tmp_path / "test.db")
+        uploads_dir = str(tmp_path / "uploads")
+        app = create_app(db_path=db_path, uploads_dir=uploads_dir, view_only=True)
+        view_only_client = TestClient(app)
+
+        buf = make_pptx(num_slides=1)
+        response = view_only_client.post(
+            "/api/decks/upload-stream",
+            files={"file": ("deck.pptx", buf, PPTX_MIME)},
+            headers=_TEST_AUTH,
+        )
+
+        assert response.status_code == 403, response.text
+        data = response.json()
+        assert "view-only" in data["error"].lower()
