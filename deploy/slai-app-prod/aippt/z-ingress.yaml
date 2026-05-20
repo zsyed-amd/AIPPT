@@ -1,0 +1,44 @@
+# Path-under-apex routing: https://slai-app.amd.com/aippt/...
+#
+# Pattern (mirrors slai-app-platform/deploy/slai-app-prod/ldap-oauth):
+# - Shared apex TLS Secret (slai-app-amd-com-tls), copied from
+#   slai-app-platform/deploy/platform-tls/prod/tls-secret.enc.yaml as
+#   tls-secret.enc.yaml in this folder.
+# - AIPPT's FastAPI app + static SPA serve routes at root (/healthz, /api/...,
+#   /static/..., /slide-image/..., /docs/...). nginx-ingress strips /aippt with
+#   the rewrite-target annotation before forwarding so the app does not need
+#   to know about its public path prefix.
+# - Captures: $1 = "/" or "" (boundary), $2 = remainder; rewrite to /$2.
+#     /aippt              -> /
+#     /aippt/             -> /
+#     /aippt/api/decks    -> /api/decks
+#     /aippt/static/x.js  -> /static/x.js
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hosted-slai-aippt
+  namespace: slai-app-prod
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+  labels:
+    app.kubernetes.io/name: aippt
+    app.kubernetes.io/instance: hosted-slai-aippt
+    app.kubernetes.io/managed-by: slai-app-platform
+    hosted-by: slai-app-platform
+    customer-team: tme-dcgpu
+spec:
+  rules:
+    - host: slai-app.amd.com
+      http:
+        paths:
+          - path: /aippt(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: hosted-slai-aippt
+                port:
+                  name: http
+  tls:
+    - hosts:
+        - slai-app.amd.com
+      secretName: slai-app-amd-com-tls

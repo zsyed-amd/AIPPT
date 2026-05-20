@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: hosted-slai-aippt
+  namespace: slai-app-prod
+  labels:
+    app.kubernetes.io/name: aippt
+    app.kubernetes.io/instance: hosted-slai-aippt
+    app.kubernetes.io/managed-by: slai-app-platform
+    hosted-by: slai-app-platform
+    customer-team: tme-dcgpu
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: aippt
+    app.kubernetes.io/instance: hosted-slai-aippt
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

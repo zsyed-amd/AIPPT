@@ -2,9 +2,13 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: aippt-data
-  namespace: slai-security-infrastructure-dev
+  namespace: slai-app-prod
   labels:
     app.kubernetes.io/name: aippt
+    app.kubernetes.io/instance: hosted-slai-aippt
+    app.kubernetes.io/managed-by: slai-app-platform
+    hosted-by: slai-app-platform
+    customer-team: tme-dcgpu
 spec:
   accessModes:
     - ReadWriteOnce

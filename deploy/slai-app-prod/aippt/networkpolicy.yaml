@@ -1,14 +1,19 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: aippt-net
-  namespace: slai-security-infrastructure-dev
+  name: hosted-slai-aippt
+  namespace: slai-app-prod
   labels:
     app.kubernetes.io/name: aippt
+    app.kubernetes.io/instance: hosted-slai-aippt
+    app.kubernetes.io/managed-by: slai-app-platform
+    hosted-by: slai-app-platform
+    customer-team: tme-dcgpu
 spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: aippt
+      app.kubernetes.io/instance: hosted-slai-aippt
   policyTypes:
     - Ingress
     - Egress
@@ -31,11 +36,14 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # OTLP gRPC
+    # OTLP gRPC -> platform collector (atlvslaiapp03:4317)
     - ports:
         - protocol: TCP
           port: 4317
-    # LLM Gateway (llm-api.amd.com:443)
+    # TCP 443 covers:
+    #   - LLM Gateway (llm-api.amd.com)
+    #   - Microsoft Graph (graph.microsoft.com) for SharePoint PPTX render
+    #   - Azure AD device-code auth (login.microsoftonline.com)
     - ports:
         - protocol: TCP
           port: 443

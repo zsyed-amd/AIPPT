@@ -1,19 +1,28 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: aippt
-  namespace: slai-security-infrastructure-dev
+  name: hosted-slai-aippt
+  namespace: slai-app-prod
   labels:
     app.kubernetes.io/name: aippt
+    app.kubernetes.io/instance: hosted-slai-aippt
+    app.kubernetes.io/managed-by: slai-app-platform
+    hosted-by: slai-app-platform
+    customer-team: tme-dcgpu
 spec:
   replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/name: aippt
+      app.kubernetes.io/instance: hosted-slai-aippt
   template:
     metadata:
       labels:
         app.kubernetes.io/name: aippt
+        app.kubernetes.io/instance: hosted-slai-aippt
+        app.kubernetes.io/managed-by: slai-app-platform
+        hosted-by: slai-app-platform
+        customer-team: tme-dcgpu
     spec:
       automountServiceAccountToken: false
       securityContext:
@@ -25,7 +34,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: app
-          image: mkmhub.amd.com/hw-slai-dev/aippt:YOUR_GIT_SHA
+          image: mkmhub.amd.com/hw-slaiapp-dev/aippt:13f7c6f43d864ca12231c0a8830afe428c627f86
           securityContext:
             privileged: false
             allowPrivilegeEscalation: false

@@ -1,10 +1,23 @@
 #!/usr/bin/env bash
-# Build linux/amd64 and push to Harbor. Writes .cache/harbor-last-image.env (FULL_IMAGE, IMAGE_TAG)
-# after success — use for deployment.yaml image: (see app-platform skill §1).
+# Build linux/amd64 and push AIPPT to Harbor (mkmhub.amd.com/hw-slaiapp-dev/aippt).
+# Writes .cache/harbor-last-image.env (FULL_IMAGE, IMAGE_TAG) after success — use
+# that FULL_IMAGE for deploy/slai-app-prod/aippt/deployment.yaml
+# spec.template.spec.containers[].image.
+#
+# Source-of-truth template:
+#   .claude/skills/slai-app-creator/assets/templates/publish-image-harbor.sh.example
+# If HARBOR_USERNAME/HARBOR_PASSWORD are not set in .env, this script installs/uses
+# the Harbor CLI and reads short-lived robot credentials from
+# ~/.config/harbor/credentials (run `harbor auth login hw-slaiapp-dev` once
+# interactively when prompted).
 #
 # Usage:
 #   cp -n .env.example .env
 #   ./scripts/publish-image-harbor.sh
+#
+# Optional: IMAGE_TAG, DOCKERFILE, PANDORA_ROOT, PODMAN, RUNC, FORCE_PODMAN=1,
+#           HARBOR_LAST_IMAGE_FILE (default: $ROOT/.cache/harbor-last-image.env), SKIP_DOTENV=1,
+#           HARBOR_CLI_BIN, HARBOR_CLI_BASE_URL, HARBOR_CLI_INSTALL_DIR, HARBOR_CONFIG_DIR
 
 set -euo pipefail
 
@@ -20,11 +33,93 @@ if [[ -z "${SKIP_DOTENV:-}" && -f "$ROOT/.env" ]]; then
 fi
 
 : "${HARBOR_REGISTRY:?Set HARBOR_REGISTRY (e.g. mkmhub.amd.com) or add to .env}"
-: "${HARBOR_PROJECT:?Set HARBOR_PROJECT (e.g. hw-slai-dev) or add to .env}"
+: "${HARBOR_PROJECT:?Set HARBOR_PROJECT (e.g. hw-slaiapp-dev) or add to .env}"
 : "${IMAGE_NAME:?Set IMAGE_NAME (Harbor repository name) or add to .env}"
 : "${BUILD_CONTEXT:?Set BUILD_CONTEXT (directory containing Dockerfile, relative to repo root) or add to .env}"
-: "${HARBOR_USERNAME:?Set HARBOR_USERNAME or add to .env}"
-: "${HARBOR_PASSWORD:?Set HARBOR_PASSWORD or add to .env}"
+
+resolve_harbor_cli() {
+  if [[ -n "${HARBOR_CLI_BIN:-}" && -x "$HARBOR_CLI_BIN" ]]; then
+    echo "$HARBOR_CLI_BIN"
+    return 0
+  fi
+  if [[ -n "${HARBOR_CLI_INSTALL_DIR:-}" && -x "$HARBOR_CLI_INSTALL_DIR/harbor" ]]; then
+    echo "$HARBOR_CLI_INSTALL_DIR/harbor"
+    return 0
+  fi
+  if [[ -n "${HARBOR_CLI_INSTALL_DIR:-}" && -x "$HARBOR_CLI_INSTALL_DIR/harbor.exe" ]]; then
+    echo "$HARBOR_CLI_INSTALL_DIR/harbor.exe"
+    return 0
+  fi
+  if command -v harbor >/dev/null 2>&1; then
+    command -v harbor
+    return 0
+  fi
+  if [[ -x "$HOME/.local/bin/harbor" ]]; then
+    echo "$HOME/.local/bin/harbor"
+    return 0
+  fi
+  if [[ -n "${USERPROFILE:-}" && -x "$USERPROFILE/.local/bin/harbor.exe" ]]; then
+    echo "$USERPROFILE/.local/bin/harbor.exe"
+    return 0
+  fi
+  return 1
+}
+
+install_harbor_cli() {
+  local base="${HARBOR_CLI_BASE_URL:-https://atlartifactory.amd.com:8443/artifactory/SW-SLAI-PROD-LOCAL/harbor-cli}"
+  echo "Harbor CLI not found; installing from ${base}/install.sh" >&2
+  curl -fsSL "${base}/install.sh" | sh
+}
+
+load_harbor_cli_credentials() {
+  local harbor_bin="$1"
+  local cred_file="${HARBOR_CONFIG_DIR:-$HOME/.config/harbor}/credentials"
+  "$harbor_bin" auth login "$HARBOR_PROJECT"
+  if [[ ! -f "$cred_file" ]]; then
+    echo "Harbor credentials file was not created: $cred_file" >&2
+    return 1
+  fi
+  local parsed
+  parsed="$(python3 - "$cred_file" "$HARBOR_PROJECT" "$HARBOR_REGISTRY" <<'PY'
+import configparser
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+project = sys.argv[2]
+expected_registry = sys.argv[3]
+section = f"project.{project}"
+cfg = configparser.RawConfigParser()
+cfg.read(path)
+if section not in cfg:
+    raise SystemExit(f"missing [{section}] in {path}")
+robot_name = cfg[section].get("robot_name", "").strip()
+robot_secret = cfg[section].get("robot_secret", "").strip()
+registry = cfg[section].get("harbor_registry", "").strip()
+if not robot_name or not robot_secret:
+    raise SystemExit(f"missing robot_name or robot_secret in [{section}]")
+if registry and registry != expected_registry:
+    print(f"# Note: credential registry is {registry}; script registry is {expected_registry}", file=sys.stderr)
+print(robot_name)
+print(robot_secret)
+PY
+)"
+  HARBOR_USERNAME="$(printf '%s\n' "$parsed" | sed -n '1p')"
+  HARBOR_PASSWORD="$(printf '%s\n' "$parsed" | sed -n '2p')"
+  export HARBOR_USERNAME HARBOR_PASSWORD
+}
+
+if [[ -z "${HARBOR_USERNAME:-}" || -z "${HARBOR_PASSWORD:-}" ]]; then
+  HARBOR_BIN="$(resolve_harbor_cli || true)"
+  if [[ -z "$HARBOR_BIN" ]]; then
+    install_harbor_cli
+    HARBOR_BIN="$(resolve_harbor_cli)" || {
+      echo "Harbor CLI install completed but harbor is still not on PATH or at ~/.local/bin/harbor." >&2
+      exit 1
+    }
+  fi
+  load_harbor_cli_credentials "$HARBOR_BIN"
+fi
 
 if [[ -z "${IMAGE_TAG:-}" ]]; then
   if [[ -d "$ROOT/.git" ]]; then

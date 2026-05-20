@@ -33,7 +33,8 @@ mcp_servers.json
 # App-platform (Harbor, SOPS)
 *.raw.yaml
 *.enc.yaml
-!deploy/slai-app-dev/**/secrets.enc.yaml
+!deploy/slai-app-prod/**/secrets.enc.yaml
+!deploy/slai-app-prod/**/tls-secret.enc.yaml
 .cache/
 
 # IDE / plugins
