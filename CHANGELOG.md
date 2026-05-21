@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `GET /api/logs` — in-memory ring buffer (capacity 2000) of recent log records for in-browser triage on the SLAI platform, where `kubectl logs` is not exposed to deck authors. Bearer-gated, allowed in view-only mode, supports `limit` / `level` / `since` (cursor polling) / `logger_prefix` filters. The `AuthorizationScrubFilter` is attached directly to the handler so `Bearer <token>` strings are redacted before they land in the buffer (Python logger filters do not run for propagated records; only handler filters do). Re-installed in the FastAPI lifespan because `uvicorn.run` calls `logging.config.dictConfig` after `create_app` and replaces handlers on `uvicorn.access` / `uvicorn.error`.
+- `DELETE /api/decks/{id}` — bearer-gated deck removal for ops cleanup during testing. Rejected in view-only mode. Optional `?purge_images=false` keeps the rendered PNG directory; default purges it. Not yet surfaced in the UI.
+- `templates.yaml` is now baked into the container image so `GET /api/templates` no longer returns 503 on the platform.
+
+### Fixed
+
+- Linux Graph render path: `aippt/render.py` now renames `pdftoppm`'s `slide-NN.png` output to the `Slide{i}.png` pattern that `catalog_deck` globs for, so `/api/decks/{id}/slides` returns populated `image_path` values and the UI thumbnail grid renders. Previously every slide had `image_path: null` even when the upload reported `images_exported: true`.
+- `app.py` startup hook migrated from the deprecated `@app.on_event("startup")` to an `asynccontextmanager` lifespan.
+
 ## [3.5.0] - 2026-05-20 — Linux Image Rendering via Microsoft Graph
 
 ### Added
