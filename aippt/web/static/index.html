@@ -801,6 +801,25 @@
         </div><!-- /.layout-content -->
         </div><!-- /#main-layout -->
 
+        <!-- Duplicate-upload modal: rendered before upload starts when -->
+        <!-- /api/decks/by-hash/{sha256} returns 200 for the chosen file. -->
+        <dialog id="dup-upload-dialog">
+            <article style="max-width:32rem;">
+                <header>
+                    <button aria-label="Close" rel="prev" onclick="document.getElementById('dup-upload-dialog').close()"></button>
+                    <h3>Already in catalog</h3>
+                </header>
+                <p id="dup-upload-message"></p>
+                <p style="font-size:0.9rem; color:var(--pico-muted-color);">
+                    To re-process this deck, delete the existing entry first.
+                </p>
+                <footer style="display:flex; gap:0.5rem; justify-content:flex-end;">
+                    <button class="outline" onclick="document.getElementById('dup-upload-dialog').close()">Cancel</button>
+                    <button id="dup-upload-view-btn" onclick="viewExistingDeck()">View existing</button>
+                </footer>
+            </article>
+        </dialog>
+
         <!-- Slide detail modal -->
         <dialog id="slide-dialog">
             <article style="max-width:800px; max-height:90vh; overflow-y:auto;">
@@ -877,15 +896,96 @@
             return (localStorage.getItem('aippt_ntid') || '').trim();
         }
 
+        // Populated from /api/config at boot; 0 means "no client-side cap".
+        // The server middleware enforces the real limit regardless.
+        let maxUploadBytes = 0;
+        // Set when the duplicate-upload dialog is shown; used by viewExistingDeck().
+        let dupExistingDeckId = null;
+
         async function fetchConfig() {
             try {
                 const resp = await fetch('api/config');
                 if (resp.ok) {
                     const config = await resp.json();
                     viewOnly = config.view_only || false;
+                    if (typeof config.max_upload_bytes === 'number') {
+                        maxUploadBytes = config.max_upload_bytes;
+                    }
                 }
             } catch (e) { /* ignore */ }
             if (viewOnly) applyViewOnlyMode();
+        }
+
+        function formatBytes(n) {
+            if (n >= 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+            if (n >= 1024) return (n / 1024).toFixed(1) + ' KB';
+            return n + ' B';
+        }
+
+        async function sha256Hex(file) {
+            // crypto.subtle.digest requires a secure context (HTTPS or localhost).
+            // The 50 MB cap (sister change in this PR) bounds the worst case
+            // for hashing on the main thread; a Web Worker would help if we ever
+            // raise the cap meaningfully.
+            const buf = await file.arrayBuffer();
+            const digest = await crypto.subtle.digest('SHA-256', buf);
+            const bytes = new Uint8Array(digest);
+            let hex = '';
+            for (let i = 0; i < bytes.length; i++) {
+                hex += bytes[i].toString(16).padStart(2, '0');
+            }
+            return hex;
+        }
+
+        /**
+         * Pre-upload validation: size cap (client-side, matches server cap)
+         * + duplicate-deck detection via /api/decks/by-hash. Returns true
+         * when the upload should proceed, false when it was blocked (and
+         * the user has been informed via toast/dialog).
+         */
+        async function checkUploadPreflight(file) {
+            if (maxUploadBytes > 0 && file.size > maxUploadBytes) {
+                toast(`File too large: ${formatBytes(file.size)}. Maximum upload size: ${formatBytes(maxUploadBytes)}.`);
+                return false;
+            }
+            let sha;
+            try {
+                sha = await sha256Hex(file);
+            } catch (e) {
+                // Hashing failed (non-secure context, OOM, etc.) — fall through
+                // to upload; the server-side catalog_deck dedup is the backstop.
+                return true;
+            }
+            let resp;
+            try {
+                resp = await fetch(`api/decks/by-hash/${sha}`);
+            } catch (e) {
+                // Network blip — let the upload proceed; server dedup catches it.
+                return true;
+            }
+            if (resp.status === 404) return true;          // not a duplicate
+            if (!resp.ok) return true;                     // unexpected; defer to server
+            const existing = await resp.json();
+            showDuplicateUploadDialog(existing);
+            return false;
+        }
+
+        let dupExistingDeckName = '';
+
+        function showDuplicateUploadDialog(existing) {
+            dupExistingDeckId = existing.id;
+            dupExistingDeckName = existing.display_name || existing.name || '';
+            const cataloged = existing.cataloged_at ? ` on ${existing.cataloged_at.slice(0, 10)}` : '';
+            const msg = `This deck is already cataloged as "${dupExistingDeckName}" (${existing.slide_count} slide${existing.slide_count === 1 ? '' : 's'}${cataloged}).`;
+            document.getElementById('dup-upload-message').textContent = msg;
+            document.getElementById('dup-upload-dialog').showModal();
+        }
+
+        function viewExistingDeck() {
+            const id = dupExistingDeckId;
+            const name = dupExistingDeckName;
+            document.getElementById('dup-upload-dialog').close();
+            if (id) browseDeck(id, name);
         }
 
         function applyViewOnlyMode() {
@@ -1328,6 +1428,19 @@
             const uploadBtn = document.getElementById('deck-upload-btn');
             uploadBtn.disabled = true;
             input.disabled = true;
+
+            // Size cap + duplicate-by-hash pre-check. If the file is over the
+            // configured limit, or already in the catalog, we never start the
+            // multipart POST. Both checks are best-effort; the server enforces
+            // the cap (UploadSizeLimitMiddleware + post-read backstop) and the
+            // dedup (catalog_deck) regardless.
+            const ok = await checkUploadPreflight(file);
+            if (!ok) {
+                uploadBtn.disabled = false;
+                input.disabled = false;
+                input.value = '';
+                return;
+            }
 
             // Show progress UI
             const progressEl = document.getElementById('deck-upload-progress');

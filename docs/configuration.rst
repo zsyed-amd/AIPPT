@@ -163,6 +163,29 @@ named environment variable instead — useful for CI / secret management.
 See the ``sharepoint-setup`` page (``docs/sharepoint-setup.md``) for
 provisioning the staging library and finding the site / drive IDs.
 
+Upload Size Limit
+^^^^^^^^^^^^^^^^^
+
+The ``upload:`` block caps the size of inbound deck uploads:
+
+.. code-block:: yaml
+
+    upload:
+      max_size_mb: 50
+
+- ``max_size_mb`` -- Maximum upload size in MB (default ``50``). The
+  ``UploadSizeLimitMiddleware`` rejects POSTs to ``/api/decks/upload``,
+  ``/api/decks/upload-stream``, and ``/api/decks/create`` whose
+  ``Content-Length`` exceeds this with HTTP 413; a post-read backstop
+  inside the upload handlers catches chunked uploads that omit
+  ``Content-Length``. The SPA fetches the value from ``GET /api/config``
+  at boot and pre-checks ``file.size`` so the user sees a useful error
+  instead of an opaque HTTP/2 protocol error.
+
+Override per-instance with ``aippt serve --max-upload-mb N``. For
+container deployments, raise the matching ingress annotation (e.g.
+``nginx.ingress.kubernetes.io/proxy-body-size: 50m``) to the same value.
+
 Environment Variables
 ---------------------
 

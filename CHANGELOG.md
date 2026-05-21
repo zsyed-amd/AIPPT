@@ -13,8 +13,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `templates.yaml` is now baked into the container image so `GET /api/templates` no longer returns 503 on the platform.
 - NTID is now required as a gating first step inside the Microsoft sign-in modal. Clicking **Sign in to Microsoft** opens an NTID entry screen before the device-code exchange begins; the **Continue** button stays disabled until the value matches `^[A-Za-z0-9._-]+$` and an inline error explains the restriction. A small **(edit)** link on the device-code screen lets users correct a typo (abandons the current device code; the next **Continue** starts a fresh exchange).
 - Small read-only `👤 ntid` badge appears in the nav bar next to **Sign out** when the user is signed in and an NTID is saved.
+- `GET /api/config` now returns `max_upload_bytes` alongside `view_only` so the SPA can pre-check file size before initiating the multipart POST. Public, unauthenticated.
+- `GET /api/decks/by-hash/{sha256}` — returns existing deck metadata for the given SHA-256 file hash, or 404. Lets the SPA detect duplicate uploads before any bytes leave the browser; 400 on malformed hex avoids spurious DB lookups.
+- `UploadSizeLimitMiddleware` rejects POSTs to `/api/decks/upload`, `/upload-stream`, and `/create` whose `Content-Length` exceeds `app.state.max_upload_bytes` (default 50 MB) with a JSON 413 in the standard error shape, before the route handler runs. A post-read length check inside the handlers is the backstop for chunked uploads that omit `Content-Length`.
+- `aippt serve --max-upload-mb N` flag and `upload.max_size_mb` key in `gateway.yaml` for runtime override of the size cap. CLI flag wins; default is 50.
+- SPA upload modal pre-checks `file.size` against the configured cap and shows a toast when oversized, instead of letting the request fail with `ERR_HTTP2_PROTOCOL_ERROR` deep in the console.
+- SPA computes the SHA-256 of the chosen deck (`crypto.subtle.digest`) and queries `/api/decks/by-hash` before initiating the multipart POST; if the deck is already cataloged, an **Already in catalog** dialog appears with a **View existing** action and the upload never starts.
 
 ### Changed
+
+- `deploy/slai-app-prod/aippt/z-ingress.yaml` carries `nginx.ingress.kubernetes.io/proxy-body-size: 50m` so the platform ingress no longer rejects production decks (most enterprise templates are 2-15 MB) at the 1 MB nginx default.
 
 - `signOut()` now also clears `localStorage.aippt_ntid` so the next sign-in re-prompts for an NTID.
 

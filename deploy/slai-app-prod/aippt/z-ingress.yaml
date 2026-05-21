@@ -20,6 +20,13 @@ metadata:
   namespace: slai-app-prod
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /$2
+    # Raise the nginx body cap from the platform default (1 MB) so real
+    # production decks (most enterprise templates are 2-15 MB) can be
+    # uploaded through the SPA. Server-side enforcement is layered:
+    # UploadSizeLimitMiddleware (Content-Length) + post-read backstop in
+    # the upload handlers, both governed by upload.max_size_mb in
+    # gateway.yaml (default 50). Keep this annotation in sync.
+    nginx.ingress.kubernetes.io/proxy-body-size: 50m
   labels:
     app.kubernetes.io/name: aippt
     app.kubernetes.io/instance: hosted-slai-aippt

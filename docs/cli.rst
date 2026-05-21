@@ -351,6 +351,10 @@ Options:
   restart.
 - ``--view-only`` -- Disable LLM features (also settable via the
   ``AIPPT_VIEW_ONLY`` env var; auto-detected when no gateway/API keys)
+- ``--max-upload-mb N`` -- Override the upload size cap (default ``50``;
+  reads ``upload.max_size_mb`` from ``gateway.yaml`` otherwise). The
+  middleware rejects oversized POSTs to ``/api/decks/upload*`` with HTTP
+  413 before the route handler runs.
 
 Examples::
 
@@ -358,6 +362,7 @@ Examples::
     python aippt.py serve --port 8000 --gateway-config gateway.yaml
     python aippt.py serve --view-only
     python aippt.py serve --host 0.0.0.0 --port 8000 --images-dir /app/data/images
+    python aippt.py serve --max-upload-mb 100
 
 models
 ------

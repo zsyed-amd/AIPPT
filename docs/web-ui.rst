@@ -144,6 +144,43 @@ new deck from a markdown outline. The panel supports:
 
 All Create controls are disabled in view-only mode.
 
+Upload Limits
+^^^^^^^^^^^^^
+
+Decks larger than the configured cap (default 50 MB) are rejected before
+the multipart POST starts. The SPA reads the cap from ``GET /api/config``
+at boot and pre-checks ``file.size`` on selection; if the file is over
+the limit, a toast shows ``File too large: X MB. Maximum upload size:
+Y MB.`` and the upload never fires.
+
+If the SPA pre-check is bypassed (curl, custom client), the server
+enforces the same cap with a JSON 413: middleware short-circuits on
+``Content-Length``, and a post-read backstop in the upload handler
+catches chunked uploads that omit the header. Container deployments also
+need the matching ingress annotation (e.g.
+``nginx.ingress.kubernetes.io/proxy-body-size: 50m``); see
+:doc:`configuration` for the ``upload:`` block and ``aippt serve
+--max-upload-mb N`` for the runtime override.
+
+Duplicate Detection
+^^^^^^^^^^^^^^^^^^^
+
+On file selection the SPA computes the SHA-256 of the chosen ``.pptx``
+in the browser (``crypto.subtle.digest``) and calls ``GET
+/api/decks/by-hash/{sha256}``. If the catalog already has a deck with
+that hash, an **Already in catalog** dialog appears with the existing
+deck's name, slide count, and cataloging date, plus a **View existing**
+button that opens the duplicate's slide browser. The upload never
+starts.
+
+To re-process an identical deck, delete the existing entry from the
+deck list first (or via ``aippt decks delete``) and re-upload.
+
+If hashing or the lookup fails (non-secure context, network blip, 5xx),
+the upload proceeds and the existing server-side dedup in
+``catalog_deck`` is the backstop -- the user sees a successful upload
+that quietly maps onto the existing catalog row.
+
 Slide Browser
 -------------
 
@@ -283,6 +320,12 @@ Diagnostic Endpoints
 
 A few endpoints exist for ops triage and have no UI surface yet:
 
+- ``GET /api/config`` -- public, unauthenticated. Returns
+  ``{view_only, max_upload_bytes}`` so the SPA can pre-check uploads
+  without hardcoding deployment-specific limits.
+- ``GET /api/decks/by-hash/{sha256}`` -- public. Returns existing deck
+  metadata for a given SHA-256 file hash, or 404. Used by the
+  duplicate-upload pre-check; safe to call directly when scripting.
 - ``GET /api/logs`` -- in-memory ring buffer (capacity 2000) of recent log
   records. Bearer-gated, allowed in view-only mode. Supports ``limit``,
   ``level``, ``since`` (cursor polling), and ``logger_prefix`` query
