@@ -1,0 +1,404 @@
+{
+  "schema_version": "1.0",
+  "project": "AIPPT",
+  "purpose": "Design and test coverage baseline for supported user workflows",
+  "sources_reviewed": [
+    "README.md",
+    "aippt.py",
+    "TESTING.md",
+    "UITESTING.md",
+    "SKILLS.md",
+    "OUTLINE-FORMAT.md",
+    "aippt/cli.py",
+    "aippt/web/routes.py",
+    "CHANGELOG.md"
+  ],
+  "assumptions": [
+    "Workflows cover typical user goals rather than every CLI flag.",
+    "CLI, Web UI, and Claude Code skills should remain functionally aligned where capabilities overlap.",
+    "LLM-dependent workflows must also define graceful behavior when models, gateway config, API keys, or slide images are unavailable."
+  ],
+  "workflows": [
+    {
+      "id": "WF-001",
+      "name": "Initial setup and configuration",
+      "primary_user": "new user",
+      "surfaces": ["CLI", "config files"],
+      "goal": "Install AIPPT, initialize model settings, and configure optional LLM gateway access.",
+      "entry_points": ["pip install -r requirements.txt", "python aippt.py models init", "models.yaml", "gateway.yaml", "templates.yaml"],
+      "preconditions": ["Python 3.10+", "project checkout", "optional provider or gateway API credentials"],
+      "steps": [
+        "Create and activate virtual environment.",
+        "Install Python dependencies.",
+        "Initialize models.yaml from bundled example.",
+        "Set provider API keys or configure gateway.yaml.",
+        "Optionally set default template and per-operation model defaults."
+      ],
+      "expected_outcomes": [
+        "CLI help works.",
+        "Model defaults can be listed and changed.",
+        "Gateway-routed LLM calls can be made when credentials are present.",
+        "LLM features fail clearly when configuration is missing."
+      ],
+      "test_focus": ["install docs accuracy", "models init", "models list-available", "gateway auth errors", "template config validation"],
+      "priority": "critical"
+    },
+    {
+      "id": "WF-002",
+      "name": "Author markdown outline and generate deck from CLI",
+      "primary_user": "presentation author",
+      "surfaces": ["CLI", "outline format"],
+      "goal": "Create a PowerPoint deck from a markdown outline and template.",
+      "entry_points": ["python aippt.py create outline.md template.pptx output.pptx"],
+      "preconditions": ["valid markdown outline", "PowerPoint template file"],
+      "steps": [
+        "Write outline using simple or hierarchical markdown structure.",
+        "Optionally add frontmatter for audience, goal, and tone.",
+        "Optionally add LAYOUT and IMAGE directives.",
+        "Run create command.",
+        "Open generated PPTX and inspect slide count, layouts, text, images, and notes."
+      ],
+      "expected_outcomes": [
+        "PPTX is created.",
+        "Sections and slide titles match the outline.",
+        "Supported layouts render correctly.",
+        "Missing images or invalid layouts warn and fall back without crashing."
+      ],
+      "test_focus": ["parser modes", "layout directives", "image directives", "template validation", "test mode first N slides"],
+      "priority": "critical"
+    },
+    {
+      "id": "WF-003",
+      "name": "Generate enhanced deck with AI",
+      "primary_user": "presentation author",
+      "surfaces": ["CLI", "Web UI"],
+      "goal": "Use an LLM to improve layout, narrative flow, slide titles, notes, and visual planning during deck creation.",
+      "entry_points": ["python aippt.py create --enhance", "Web UI Create Deck from Outline"],
+      "preconditions": ["valid outline", "LLM model configured", "gateway/API credentials if needed"],
+      "steps": [
+        "Choose target audience.",
+        "Run deck creation with enhance enabled.",
+        "Optionally inspect the narrative plan.",
+        "Generate the deck.",
+        "Review enhanced titles, content structure, notes, and visual choices."
+      ],
+      "expected_outcomes": [
+        "Deck preserves outline intent while improving presentation quality.",
+        "Audience selection changes language depth appropriately.",
+        "Author-specified LAYOUT directives override LLM layout suggestions.",
+        "Progress is visible in the web UI during generation."
+      ],
+      "test_focus": ["audience modes", "show-plan", "no-plan", "model override", "SSE progress", "LLM unavailable handling"],
+      "priority": "critical"
+    },
+    {
+      "id": "WF-004",
+      "name": "Create outline from source material using skill workflow",
+      "primary_user": "agent-assisted author",
+      "surfaces": ["Claude Code skills"],
+      "goal": "Turn documents, repos, web pages, directories, or freeform topics into an AIPPT-compatible outline.",
+      "entry_points": ["/create-outline"],
+      "preconditions": ["source material available", "optional Playwright support for screenshots"],
+      "steps": [
+        "Provide source path, URL, repo, directory, or topic.",
+        "Gather and analyze source content.",
+        "Define audience, goal, and tone.",
+        "Generate and iterate on outline.",
+        "Optionally enrich visual slides with screenshots or TODO placeholders."
+      ],
+      "expected_outcomes": [
+        "Markdown outline is saved under outlines/.",
+        "Outline follows AIPPT format conventions.",
+        "Visual needs are explicitly represented with IMAGE directives or TODOs.",
+        "User can pass the result to /create-deck or aippt create."
+      ],
+      "test_focus": ["source ingestion types", "outline validity", "audience metadata", "visual placeholder handling"],
+      "priority": "high"
+    },
+    {
+      "id": "WF-005",
+      "name": "Generate slides-as-code deck using skill workflow",
+      "primary_user": "agent-assisted author",
+      "surfaces": ["Claude Code skills", "pptxgenjs", "python-pptx"],
+      "goal": "Create a polished PPTX and reproducible build script from an outline.",
+      "entry_points": ["/create-deck"],
+      "preconditions": ["AIPPT outline", "Node.js for pptxgenjs or Python environment for python-pptx"],
+      "steps": [
+        "Select an outline.",
+        "Choose pptxgenjs for creative themed decks or python-pptx for strict template use.",
+        "Choose theme or corporate template.",
+        "Generate build script.",
+        "Run build script to create PPTX."
+      ],
+      "expected_outcomes": [
+        "PPTX is created in output/.",
+        "Build script is saved as the source of truth.",
+        "Theme tokens, layouts, masters, and section dividers are applied where supported.",
+        "Dense slides are identifiable for later review."
+      ],
+      "test_focus": ["theme selection", "script reproducibility", "sectioned generation", "template-based generation", "text overflow risk"],
+      "priority": "high"
+    },
+    {
+      "id": "WF-006",
+      "name": "Review and improve generated deck",
+      "primary_user": "deck reviewer",
+      "surfaces": ["Claude Code skills", "CLI", "Web UI"],
+      "goal": "Perform visual QA, collect feedback, generate notes, and improve slides after deck creation.",
+      "entry_points": ["/deck-review", "python aippt.py analyze", "python aippt.py improve"],
+      "preconditions": ["existing PPTX", "optional slide images", "optional LLM model"],
+      "steps": [
+        "Render or provide slide images.",
+        "Review slides for visual quality, overflow, contrast, alignment, and content issues.",
+        "Run AI feedback, notes, tags, or improvement suggestions.",
+        "Optionally apply improvements to selected slides.",
+        "Preserve review or edit metadata where supported."
+      ],
+      "expected_outcomes": [
+        "Reviewer receives actionable slide feedback.",
+        "Speaker notes can be generated.",
+        "Improvement dry-runs show proposed changes before writing.",
+        "Applied improvements update the deck or chosen output file."
+      ],
+      "test_focus": ["analyze modes", "improve dry-run", "slide filters", "passes", "validation retry", "metadata extraction"],
+      "priority": "critical"
+    },
+    {
+      "id": "WF-007",
+      "name": "Reverse existing PowerPoint to markdown outline",
+      "primary_user": "presentation maintainer",
+      "surfaces": ["CLI"],
+      "goal": "Convert a PPTX into a reusable markdown outline for regeneration or editing.",
+      "entry_points": ["python aippt.py reverse input.pptx output.md"],
+      "preconditions": ["existing PPTX", "optional slide images and LLM model for enhanced reverse"],
+      "steps": [
+        "Run reverse conversion.",
+        "Choose whether to include, exclude, or strip speaker notes.",
+        "Optionally run enhanced multimodal reverse with slide images.",
+        "Review generated markdown outline."
+      ],
+      "expected_outcomes": [
+        "Markdown outline is generated.",
+        "Slide titles and bullet hierarchy are preserved as much as possible.",
+        "Speaker notes do not leak into slide body.",
+        "Enhanced mode produces higher-quality outline language when configured."
+      ],
+      "test_focus": ["notes handling", "tables", "multi-line titles", "decorative shape filtering", "enhanced reverse fallback"],
+      "priority": "high"
+    },
+    {
+      "id": "WF-008",
+      "name": "Ingest and catalog presentation library",
+      "primary_user": "library curator",
+      "surfaces": ["CLI", "Web UI"],
+      "goal": "Add existing decks and slide thumbnails to the searchable SQLite catalog.",
+      "entry_points": ["python aippt.py ingest", "python aippt.py catalog", "Web UI Upload Deck"],
+      "preconditions": ["PPTX file", "PowerPoint image export support or existing slide images"],
+      "steps": [
+        "Export slide images or let ingest attempt export.",
+        "Catalog deck metadata, slide text, notes, hashes, image paths, and source tracking.",
+        "Optionally generate tags during ingest.",
+        "Verify deck appears in catalog."
+      ],
+      "expected_outcomes": [
+        "Deck and slides are stored in SQLite.",
+        "Images are linked to slides.",
+        "Re-cataloging detects existing content and updates metadata safely.",
+        "Uploaded decks are downloadable from the web UI."
+      ],
+      "test_focus": ["catalog schema", "content hashes", "metadata extraction", "image paths", "upload streaming", "source tracking"],
+      "priority": "critical"
+    },
+    {
+      "id": "WF-009",
+      "name": "Browse, search, and tag slide library",
+      "primary_user": "library user",
+      "surfaces": ["Web UI", "CLI"],
+      "goal": "Find reusable slides by deck, title, section, or tags and curate tags manually.",
+      "entry_points": ["Web UI deck browser", "Web UI search", "python aippt.py search", "python aippt.py tag", "python aippt.py untag"],
+      "preconditions": ["cataloged deck"],
+      "steps": [
+        "Open deck list.",
+        "Browse a deck's slide grid.",
+        "Open slide detail modal.",
+        "Search by title or tags.",
+        "Add or remove manual tags."
+      ],
+      "expected_outcomes": [
+        "Deck list and slide grid display expected metadata.",
+        "Search results match title and tag filters.",
+        "Manual tags persist in the database.",
+        "Tag sidebar filters library content."
+      ],
+      "test_focus": ["deck list", "slide grid", "search by title", "search by tags", "tag persistence", "tag removal"],
+      "priority": "critical"
+    },
+    {
+      "id": "WF-010",
+      "name": "Manage taxonomy and model defaults",
+      "primary_user": "administrator",
+      "surfaces": ["CLI", "Web UI"],
+      "goal": "Control allowed tags and default LLM models per operation.",
+      "entry_points": ["python aippt.py tags", "python aippt.py models", "Web UI Settings"],
+      "preconditions": ["database exists", "models.yaml exists for model management"],
+      "steps": [
+        "Add, remove, rename, import, or export taxonomy tags.",
+        "Set default models for enhance, feedback, notes, tags, image, reverse, and improve operations.",
+        "Set default template path.",
+        "Validate settings are persisted."
+      ],
+      "expected_outcomes": [
+        "Taxonomy changes affect future taxonomy-constrained tagging.",
+        "Renaming taxonomy tags updates slide associations.",
+        "Invalid model defaults are rejected.",
+        "Settings survive reloads."
+      ],
+      "test_focus": ["taxonomy CRUD", "CSV import/export", "model registry validation", "template path validation", "settings persistence"],
+      "priority": "high"
+    },
+    {
+      "id": "WF-011",
+      "name": "Run AI analysis and tagging on cataloged slides",
+      "primary_user": "library curator",
+      "surfaces": ["CLI", "Web UI"],
+      "goal": "Generate design feedback, speaker notes, improvement suggestions, or tags for slides.",
+      "entry_points": ["python aippt.py analyze", "single-slide web AI actions"],
+      "preconditions": ["cataloged deck", "LLM model configured", "slide images for visual analysis unless text-only fallback is acceptable"],
+      "steps": [
+        "Select analysis mode: feedback, notes, tags, or improvements.",
+        "Choose model or rely on defaults.",
+        "Provide images directory or use cataloged image paths.",
+        "Run analysis.",
+        "Review console or web results."
+      ],
+      "expected_outcomes": [
+        "Feedback and improvements are displayed.",
+        "Notes can be written to PPTX or stored in DB.",
+        "Tags are added as AI or taxonomy source.",
+        "Text-only fallback works when images are missing for CLI analysis."
+      ],
+      "test_focus": ["vision model validation", "taxonomy-constrained tags", "text-only fallback", "per-slide web errors", "view-only mode restrictions"],
+      "priority": "critical"
+    },
+    {
+      "id": "WF-012",
+      "name": "Edit speaker notes and write back to deck",
+      "primary_user": "speaker or reviewer",
+      "surfaces": ["Web UI", "CLI"],
+      "goal": "Manage speaker notes in the catalog and write them back into the source PPTX.",
+      "entry_points": ["Web UI notes editor", "python aippt.py write-notes"],
+      "preconditions": ["cataloged deck", "source PPTX still available"],
+      "steps": [
+        "Open slide detail.",
+        "Edit speaker notes manually or generate suggested notes.",
+        "Save notes to database.",
+        "Review notes edit history.",
+        "Write catalog notes back to the original PPTX with backup."
+      ],
+      "expected_outcomes": [
+        "Notes edits persist in the database.",
+        "Edit history records old value, new value, source, and timestamp.",
+        "Write-back creates a backup.",
+        "Slides with conflicts or missing source are reported clearly."
+      ],
+      "test_focus": ["notes save", "history endpoint", "write-back backup", "missing source handling", "conflict warnings"],
+      "priority": "high"
+    },
+    {
+      "id": "WF-013",
+      "name": "Export, remix, and reuse slides",
+      "primary_user": "presentation builder",
+      "surfaces": ["CLI", "Web UI"],
+      "goal": "Export catalog metadata or assemble a new deck from selected existing slides.",
+      "entry_points": ["python aippt.py export", "python aippt.py search --export-manifest", "python aippt.py remix", "Web UI Export CSV"],
+      "preconditions": ["cataloged slides"],
+      "steps": [
+        "Search for desired slides.",
+        "Export search results as a remix manifest.",
+        "Optionally edit manifest manually.",
+        "Run remix to assemble a new PPTX.",
+        "Export full or deck-specific catalog metadata to CSV."
+      ],
+      "expected_outcomes": [
+        "CSV contains expected slide metadata.",
+        "Manifest references correct source decks and positions.",
+        "Remixed deck opens and contains selected slides in order.",
+        "Missing manifests or source files produce clear errors."
+      ],
+      "test_focus": ["CSV headers", "manifest generation", "manual manifest", "remix ordering", "version warnings", "error paths"],
+      "priority": "high"
+    },
+    {
+      "id": "WF-014",
+      "name": "Operate library in view-only or portable mode",
+      "primary_user": "viewer or deployment owner",
+      "surfaces": ["Web UI", "CLI", "Docker/config"],
+      "goal": "Run AIPPT as a browse-only slide library and keep catalog paths portable.",
+      "entry_points": ["python aippt.py serve --view-only", "AIPPT_VIEW_ONLY", "python aippt.py migrate-paths", "backup/restore scripts"],
+      "preconditions": ["existing catalog", "optional container deployment"],
+      "steps": [
+        "Launch web UI in view-only mode or without LLM config.",
+        "Browse decks, slides, tags, search, downloads, and CSV export.",
+        "Verify LLM endpoints are disabled.",
+        "Migrate absolute paths to relative paths when moving the library.",
+        "Backup and restore catalog assets when needed."
+      ],
+      "expected_outcomes": [
+        "Non-LLM browsing features work.",
+        "LLM actions are disabled with clear messages.",
+        "Relative paths resolve from project root.",
+        "Library can move across machines or containers."
+      ],
+      "test_focus": ["view-only API 403s", "non-LLM UI availability", "relative path migration", "download routes", "backup/restore docs"],
+      "priority": "medium"
+    },
+    {
+      "id": "WF-015",
+      "name": "Use corporate template, themes, and metadata workflows",
+      "primary_user": "brand-conscious author",
+      "surfaces": ["CLI", "slides-as-code helpers"],
+      "goal": "Generate branded decks, merge generated content into a corporate template, and inspect embedded AI metadata.",
+      "entry_points": ["python aippt.py create --corp-template", "python aippt.py merge-template", "python aippt.py merge", "python aippt.py metadata"],
+      "preconditions": ["generated deck", "corporate template or themed build script"],
+      "steps": [
+        "Generate deck using selected theme or template.",
+        "Optionally merge multiple section PPTX files.",
+        "Merge generated deck into corporate template.",
+        "Inspect AI metadata embedded in speaker notes.",
+        "Validate slide masters, chrome, theme tokens, and layout mapping."
+      ],
+      "expected_outcomes": [
+        "Final deck uses expected corporate styling.",
+        "Merged sections preserve intended order.",
+        "Dry-run layout mapping is inspectable.",
+        "Metadata can be extracted as JSON."
+      ],
+      "test_focus": ["merge-template dry-run", "layout map overrides", "slide masters", "theme token schema", "metadata JSON"],
+      "priority": "medium"
+    },
+    {
+      "id": "WF-016",
+      "name": "Generate or attach visual assets through directives and MCP",
+      "primary_user": "visual deck author",
+      "surfaces": ["CLI", "outline format", "MCP"],
+      "goal": "Add diagrams, screenshots, or generated images to slides through IMAGE directives or MCP-backed image generation.",
+      "entry_points": ["IMAGE: path", "LAYOUT: diagram", "python aippt.py create --image-gen mcp", "python aippt.py mcp list"],
+      "preconditions": ["outline with visual directives", "local image files or MCP image server config"],
+      "steps": [
+        "Add IMAGE directives to slides.",
+        "Use diagram or two-column layouts when appropriate.",
+        "Configure MCP server if generating images.",
+        "Run deck generation.",
+        "Verify visuals are placed correctly and text moves to notes when required."
+      ],
+      "expected_outcomes": [
+        "Existing images are embedded.",
+        "Missing images warn without failing the whole deck.",
+        "MCP image generation can discover configured tools.",
+        "Diagram slides allocate full content area appropriately."
+      ],
+      "test_focus": ["image path resolution", "supported image formats", "diagram layout", "MCP config list", "classification flag"],
+      "priority": "medium"
+    }
+  ]
+}
