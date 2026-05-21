@@ -18,3 +18,7 @@ python-multipart>=0.0.6  # File uploads
 
 # Development
 pytest>=7.0          # Testing
+
+# Documentation (docs/ Sphinx build)
+sphinx>=7.0
+sphinx-rtd-theme>=2.0  # html_theme referenced in docs/conf.py
