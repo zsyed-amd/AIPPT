@@ -14,9 +14,17 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.viewcode",
     "sphinx_rtd_theme",
+    "myst_parser",
 ]
 
-html_theme = "sphinx_rtd_theme"
-html_static_path = ["_static"]
+source_suffix = {
+    ".rst": "restructuredtext",
+    ".md": "markdown",
+}
 
-exclude_patterns = ["_build", "plans", "*.md"]
+html_theme = "sphinx_rtd_theme"
+
+# Only top-level docs/*.md pages (e.g. sharepoint-setup) are part of the
+# toctree. Working notes under superpowers/ and use-cases/ are excluded
+# wholesale so they don't bloat the build or trigger orphan warnings.
+exclude_patterns = ["_build", "plans", "superpowers", "use-cases"]

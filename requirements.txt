@@ -22,3 +22,4 @@ pytest>=7.0          # Testing
 # Documentation (docs/ Sphinx build)
 sphinx>=7.0
 sphinx-rtd-theme>=2.0  # html_theme referenced in docs/conf.py
+myst-parser>=2.0       # render docs/*.md (e.g. sharepoint-setup) into the toctree
