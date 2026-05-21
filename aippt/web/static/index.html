@@ -548,6 +548,71 @@
             color: var(--accent, var(--pico-primary));
             white-space: nowrap;
         }
+        /* Admin logs panel */
+        #admin-logs-dialog article {
+            max-width: 56rem;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+        #admin-logs-dialog header {
+            flex-shrink: 0;
+        }
+        #admin-logs-dialog .logs-toolbar {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            flex-shrink: 0;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--pico-muted-border-color);
+            flex-wrap: wrap;
+        }
+        #admin-logs-dialog .logs-toolbar button {
+            width: auto;
+            margin: 0;
+            padding: 0.25rem 0.6rem;
+            font-size: 0.8rem;
+        }
+        #admin-logs-dialog .logs-toolbar select {
+            width: auto;
+            margin: 0;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.8rem;
+        }
+        #admin-logs-dialog .logs-status {
+            margin-left: auto;
+            font-size: 0.75rem;
+            color: var(--pico-muted-color);
+        }
+        #logs-body {
+            flex: 1;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.78rem;
+            background: var(--pico-card-background-color, var(--pico-background-color));
+            border: 1px solid var(--pico-muted-border-color);
+            border-radius: var(--pico-border-radius);
+            padding: 0.5rem;
+            margin-top: 0.5rem;
+            min-height: 200px;
+            max-height: 50vh;
+            white-space: pre-wrap;
+            word-break: break-all;
+            line-height: 1.5;
+        }
+        .log-line { display: block; padding: 0.05rem 0; }
+        .log-line.ERROR, .log-line.CRITICAL { color: #cf6679; }
+        .log-line.WARNING { color: #e8a058; }
+        .log-line.DEBUG { color: var(--pico-muted-color); }
+        /* Admin delete button in deck rows */
+        .admin-delete-btn {
+            color: var(--pico-del-color, #c0392b);
+            border-color: var(--pico-del-color, #c0392b);
+        }
+        .admin-delete-btn:hover {
+            background: var(--pico-del-color, #c0392b);
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -571,6 +636,9 @@
             </li>
             <li id="ms-signout-nav-item" style="display:none;">
                 <button id="ms-signout-btn" type="button" class="outline secondary" onclick="onMsSignOutClick()" title="Sign out of Microsoft">Sign out</button>
+            </li>
+            <li id="admin-logs-nav-item" style="display:none;">
+                <button type="button" class="outline" onclick="openAdminLogs()" title="Admin: Live log panel" aria-label="Open admin log panel">Logs</button>
             </li>
             <li>
                 <button id="theme-toggle" type="button" class="contrast outline"
@@ -881,6 +949,59 @@
             </article>
         </dialog>
 
+        <!-- Admin: Live Log Panel -->
+        <dialog id="admin-logs-dialog">
+            <article>
+                <header>
+                    <button aria-label="Close" rel="prev" onclick="closeAdminLogs()"></button>
+                    <h3 style="margin:0;">Server Logs</h3>
+                </header>
+                <div class="logs-toolbar">
+                    <label style="margin:0; font-size:0.8rem;">Level:
+                        <select id="logs-level-select" onchange="resetAndPollLogs()">
+                            <option value="">All</option>
+                            <option value="DEBUG">DEBUG</option>
+                            <option value="INFO" selected>INFO</option>
+                            <option value="WARNING">WARNING</option>
+                            <option value="ERROR">ERROR</option>
+                        </select>
+                    </label>
+                    <button id="logs-pause-btn" onclick="toggleLogsPause()">Pause</button>
+                    <button class="outline" onclick="resetAndPollLogs()">Refresh</button>
+                    <button class="outline" onclick="clearLogsDisplay()">Clear display</button>
+                    <span class="logs-status" id="logs-status">Idle</span>
+                </div>
+                <div id="logs-body"></div>
+            </article>
+        </dialog>
+
+        <!-- Admin: Delete Deck Confirmation -->
+        <dialog id="admin-delete-deck-dialog">
+            <article style="max-width:32rem;">
+                <header>
+                    <button aria-label="Close" rel="prev" onclick="cancelDeleteDeck()"></button>
+                    <h3>Delete Deck</h3>
+                </header>
+                <p id="admin-delete-deck-message"></p>
+                <p style="font-size:0.9rem; color:var(--pico-muted-color);">
+                    This permanently removes the deck and all its slides from the catalog.
+                    Rendered images will also be purged.
+                </p>
+                <label for="admin-delete-deck-confirm-input" style="font-size:0.9rem; font-weight:600;">
+                    Type the deck name to confirm:
+                </label>
+                <input type="text" id="admin-delete-deck-confirm-input"
+                       placeholder="Deck name"
+                       oninput="updateDeleteDeckConfirmBtn()"
+                       style="margin-bottom:0.5rem;">
+                <p id="admin-delete-deck-error" style="color:var(--pico-del-color,#c0392b); font-size:0.85rem; min-height:1.2rem; margin:0;"></p>
+                <footer style="display:flex; gap:0.5rem; justify-content:flex-end;">
+                    <button class="outline" onclick="cancelDeleteDeck()">Cancel</button>
+                    <button id="admin-delete-deck-confirm-btn" class="admin-delete-btn" onclick="confirmDeleteDeck()" disabled>Delete</button>
+                </footer>
+            </article>
+        </dialog>
+
         <div id="toast"></div>
     </main>
 
@@ -1062,6 +1183,7 @@
                     <td onclick="event.stopPropagation()">
                         <button class="outline" style="width:auto; padding:0.3rem 0.7rem; font-size:0.8rem;" onclick="downloadDeck(${d.id})">Download</button>
                         <button class="outline" style="width:auto; padding:0.3rem 0.7rem; font-size:0.8rem; margin-left:0.3rem;" onclick="writeNotesToDeck(${d.id})">Write Notes to Deck</button>
+                        ${window.isAdmin ? `<button class="outline admin-delete-btn" style="width:auto; padding:0.3rem 0.7rem; font-size:0.8rem; margin-left:0.3rem;" onclick="promptDeleteDeck(${d.id}, '${escAttr(d.display_name || d.name)}', ${d.slide_count})">Delete</button>` : ''}
                     </td>
                 </tr>
             `).join('');
@@ -2178,6 +2300,221 @@
             }
         }
 
+        // --- Admin tier: whoami + is_admin gate ---
+
+        // Cached admin flag. Exposed on window so deck row template can read it
+        // synchronously when showDecks() re-renders the table.
+        window.isAdmin = false;
+
+        async function fetchWhoami() {
+            try {
+                const resp = await msAuth.fetchWithAuth('api/auth/whoami');
+                if (!resp.ok) {
+                    window.isAdmin = false;
+                    return;
+                }
+                const data = await resp.json();
+                window.isAdmin = !!data.is_admin;
+            } catch (e) {
+                window.isAdmin = false;
+            }
+            applyAdminUiGates();
+        }
+
+        function applyAdminUiGates() {
+            const logsNavItem = document.getElementById('admin-logs-nav-item');
+            if (logsNavItem) {
+                logsNavItem.style.display = window.isAdmin ? '' : 'none';
+            }
+        }
+
+        // --- Admin: Log Panel ---
+
+        let _logsPollTimer = null;
+        let _logsCursor = null;     // last record id seen
+        let _logsPaused = false;
+
+        function openAdminLogs() {
+            document.getElementById('admin-logs-dialog').showModal();
+            _logsPaused = false;
+            _logsCursor = null;
+            document.getElementById('logs-body').textContent = '';
+            document.getElementById('logs-status').textContent = 'Connecting...';
+            document.getElementById('logs-pause-btn').textContent = 'Pause';
+            schedulePollLogs(0);
+        }
+
+        function closeAdminLogs() {
+            stopLogsPoll();
+            document.getElementById('admin-logs-dialog').close();
+        }
+
+        function stopLogsPoll() {
+            if (_logsPollTimer !== null) {
+                clearTimeout(_logsPollTimer);
+                _logsPollTimer = null;
+            }
+        }
+
+        function schedulePollLogs(delayMs) {
+            stopLogsPoll();
+            _logsPollTimer = setTimeout(pollLogs, delayMs);
+        }
+
+        function toggleLogsPause() {
+            _logsPaused = !_logsPaused;
+            const btn = document.getElementById('logs-pause-btn');
+            if (_logsPaused) {
+                btn.textContent = 'Resume';
+                stopLogsPoll();
+                document.getElementById('logs-status').textContent = 'Paused';
+            } else {
+                btn.textContent = 'Pause';
+                document.getElementById('logs-status').textContent = 'Resuming...';
+                schedulePollLogs(0);
+            }
+        }
+
+        function resetAndPollLogs() {
+            _logsCursor = null;
+            document.getElementById('logs-body').textContent = '';
+            if (!_logsPaused) {
+                schedulePollLogs(0);
+            }
+        }
+
+        function clearLogsDisplay() {
+            document.getElementById('logs-body').textContent = '';
+        }
+
+        async function pollLogs() {
+            _logsPollTimer = null;
+            if (_logsPaused) return;
+
+            const level = document.getElementById('logs-level-select').value;
+            const params = new URLSearchParams({limit: '200'});
+            if (level) params.set('level', level);
+            if (_logsCursor !== null) params.set('since', String(_logsCursor));
+
+            const statusEl = document.getElementById('logs-status');
+            try {
+                const resp = await msAuth.fetchWithAuth(`api/logs?${params}`);
+                if (!resp.ok) {
+                    if (resp.status === 401 || resp.status === 403) {
+                        statusEl.textContent = 'Not authorized';
+                        return;
+                    }
+                    statusEl.textContent = `Error ${resp.status}`;
+                    schedulePollLogs(5000);
+                    return;
+                }
+                const data = await resp.json();
+                const records = data.records || [];
+                if (records.length > 0) {
+                    const body = document.getElementById('logs-body');
+                    const wasAtBottom = (body.scrollTop + body.clientHeight) >= (body.scrollHeight - 8);
+                    for (const r of records) {
+                        const line = document.createElement('span');
+                        line.className = `log-line ${r.levelname || ''}`;
+                        // Format: timestamp level logger: message
+                        const ts = (r.asctime || r.created || '').slice(0, 23);
+                        line.textContent = `${ts} ${r.levelname || ''} ${r.name || ''}: ${r.message || ''}`;
+                        body.appendChild(line);
+                    }
+                    if (wasAtBottom) {
+                        body.scrollTop = body.scrollHeight;
+                    }
+                    _logsCursor = data.next_cursor;
+                }
+                const now = new Date().toLocaleTimeString();
+                statusEl.textContent = `Updated ${now} — ${data.count} new`;
+            } catch (e) {
+                statusEl.textContent = 'Network error';
+            }
+
+            if (!_logsPaused) {
+                schedulePollLogs(1000);
+            }
+        }
+
+        document.getElementById('admin-logs-dialog').addEventListener('close', function() {
+            stopLogsPoll();
+        });
+
+        // --- Admin: Delete Deck ---
+
+        let _deleteDeckId = null;
+        let _deleteDeckName = '';
+        let _deleteDeckSlides = 0;
+
+        function promptDeleteDeck(deckId, deckName, slideCount) {
+            _deleteDeckId = deckId;
+            _deleteDeckName = deckName;
+            _deleteDeckSlides = slideCount;
+            const msg = `Delete "${deckName}" — ${slideCount} slide${slideCount !== 1 ? 's' : ''}?`;
+            document.getElementById('admin-delete-deck-message').textContent = msg;
+            document.getElementById('admin-delete-deck-confirm-input').value = '';
+            document.getElementById('admin-delete-deck-error').textContent = '';
+            document.getElementById('admin-delete-deck-confirm-btn').disabled = true;
+            document.getElementById('admin-delete-deck-dialog').showModal();
+            setTimeout(() => document.getElementById('admin-delete-deck-confirm-input').focus(), 50);
+        }
+
+        function cancelDeleteDeck() {
+            document.getElementById('admin-delete-deck-dialog').close();
+            _deleteDeckId = null;
+        }
+
+        function updateDeleteDeckConfirmBtn() {
+            const input = document.getElementById('admin-delete-deck-confirm-input').value.trim();
+            const btn = document.getElementById('admin-delete-deck-confirm-btn');
+            btn.disabled = (input !== _deleteDeckName);
+        }
+
+        async function confirmDeleteDeck() {
+            if (!_deleteDeckId) return;
+            const input = document.getElementById('admin-delete-deck-confirm-input').value.trim();
+            if (input !== _deleteDeckName) {
+                document.getElementById('admin-delete-deck-error').textContent = 'Name does not match.';
+                return;
+            }
+            const btn = document.getElementById('admin-delete-deck-confirm-btn');
+            btn.disabled = true;
+            btn.textContent = 'Deleting...';
+            document.getElementById('admin-delete-deck-error').textContent = '';
+
+            try {
+                const resp = await msAuth.fetchWithAuth(
+                    `api/decks/${_deleteDeckId}`,
+                    {method: 'DELETE'}
+                );
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) {
+                    document.getElementById('admin-delete-deck-error').textContent =
+                        data.error || `Error ${resp.status}`;
+                    btn.disabled = false;
+                    btn.textContent = 'Delete';
+                    return;
+                }
+                document.getElementById('admin-delete-deck-dialog').close();
+                toast(`Deleted "${_deleteDeckName}" (${_deleteDeckSlides} slides removed)`);
+                _deleteDeckId = null;
+                await showDecks();
+            } catch (e) {
+                document.getElementById('admin-delete-deck-error').textContent = 'Network error';
+                btn.disabled = false;
+                btn.textContent = 'Delete';
+            }
+        }
+
+        // Allow Enter key in confirm input to submit
+        document.getElementById('admin-delete-deck-confirm-input').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const btn = document.getElementById('admin-delete-deck-confirm-btn');
+                if (!btn.disabled) confirmDeleteDeck();
+            }
+        });
+
         // --- Microsoft sign-in UI wiring (PRD A) ---
         // The Linux Graph render path needs a per-user MS token. Hide the
         // sign-in/out controls in view-only deployments since deck ingest is
@@ -2223,15 +2560,22 @@
             if (viewOnly) {
                 // View-only handled elsewhere; leave Upload visible-but-noop.
                 uploadSigninCta.style.display = 'none';
+                // Fetch whoami even in view-only (is_admin check is stateless on server)
+                fetchWhoami();
                 return;
             }
             if (signedIn) {
                 uploadBtn.style.display       = '';
                 uploadSigninCta.style.display = 'none';
                 uploadBtn.disabled            = false;
+                // Check admin status now that we have a token
+                fetchWhoami();
             } else {
                 uploadBtn.style.display       = 'none';
                 uploadSigninCta.style.display = '';
+                // Clear admin state on sign-out
+                window.isAdmin = false;
+                applyAdminUiGates();
             }
         }
 
@@ -2241,7 +2585,11 @@
             if (sidebarOpen) loadSidebarTags();
             // Register the MS auth state listener AFTER fetchConfig so viewOnly
             // is known; the listener fires once on registration to sync UI.
+            // applyMsAuthState fires immediately on registration; it will call
+            // fetchWhoami() when a token is already present.
             msAuth.onStateChange(applyMsAuthState);
+            // Ensure admin gate UI reflects initial (likely signed-out) state.
+            applyAdminUiGates();
             showDecks();
         });
         loadTaxonomyTags();
