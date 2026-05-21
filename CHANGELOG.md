@@ -11,6 +11,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `GET /api/logs` — in-memory ring buffer (capacity 2000) of recent log records for in-browser triage on the SLAI platform, where `kubectl logs` is not exposed to deck authors. Bearer-gated, allowed in view-only mode, supports `limit` / `level` / `since` (cursor polling) / `logger_prefix` filters. The `AuthorizationScrubFilter` is attached directly to the handler so `Bearer <token>` strings are redacted before they land in the buffer (Python logger filters do not run for propagated records; only handler filters do). Re-installed in the FastAPI lifespan because `uvicorn.run` calls `logging.config.dictConfig` after `create_app` and replaces handlers on `uvicorn.access` / `uvicorn.error`.
 - `DELETE /api/decks/{id}` — bearer-gated deck removal for ops cleanup during testing. Rejected in view-only mode. Optional `?purge_images=false` keeps the rendered PNG directory; default purges it. Not yet surfaced in the UI.
 - `templates.yaml` is now baked into the container image so `GET /api/templates` no longer returns 503 on the platform.
+- NTID is now required as a gating first step inside the Microsoft sign-in modal. Clicking **Sign in to Microsoft** opens an NTID entry screen before the device-code exchange begins; the **Continue** button stays disabled until the value matches `^[A-Za-z0-9._-]+$` and an inline error explains the restriction. A small **(edit)** link on the device-code screen lets users correct a typo (abandons the current device code; the next **Continue** starts a fresh exchange).
+- Small read-only `👤 ntid` badge appears in the nav bar next to **Sign out** when the user is signed in and an NTID is saved.
+
+### Changed
+
+- `signOut()` now also clears `localStorage.aippt_ntid` so the next sign-in re-prompts for an NTID.
+
+### Removed
+
+- Floating NTID `<input>` from the nav bar (`#ntid-nav-item`, `#ntid-input`). NTID entry is now handled exclusively inside the sign-in modal.
 
 ### Fixed
 

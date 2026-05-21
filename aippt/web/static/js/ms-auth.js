@@ -18,6 +18,11 @@
         userName:     'aippt_ms_user_name',    // optional cosmetic display
     };
 
+    var NTID_KEY = 'aippt_ntid';
+
+    // Regex that the server's _ntid_or_400 uses (allowlist guard).
+    var NTID_RE = /^[A-Za-z0-9._-]+$/;
+
     // Listeners notified whenever the signed-in state changes (sign in / out / refresh failure).
     var stateListeners = [];
 
@@ -62,6 +67,7 @@
                 localStorage.removeItem(STORAGE_KEYS[key]);
             }
         }
+        localStorage.removeItem(NTID_KEY);
         notifyStateChange();
     }
 
@@ -103,10 +109,10 @@
         var token = getToken();
         if (token) headers.set('Authorization', 'Bearer ' + token);
         // Per-user SharePoint render-staging folders are keyed by NTID.
-        // The 'aippt_ntid' key is already populated by the NTID input field
-        // in the UI; we forward it so the Linux Graph render path can write
-        // to the user's subfolder instead of a shared 'anonymous' one.
-        var ntid = (localStorage.getItem('aippt_ntid') || '').trim();
+        // The 'aippt_ntid' key is populated at sign-in (NTID step of the modal);
+        // we forward it so the Linux Graph render path can write to the user's
+        // subfolder instead of a shared 'anonymous' one.
+        var ntid = (localStorage.getItem(NTID_KEY) || '').trim();
         if (ntid) headers.set('X-AIPPT-NTID', ntid);
         var first = fetch(url, Object.assign({}, opts, {headers: headers}));
         return first.then(function (resp) {
@@ -149,23 +155,158 @@
         header.appendChild(_el('strong', null, 'Sign in to Microsoft'));
         article.appendChild(header);
 
-        var bodyDiv = _el('div', {id: 'ms-auth-body'});
-        bodyDiv.appendChild(_el('p', {style: 'margin:0 0 0.5rem 0;'}, 'Starting sign-in…'));
-        article.appendChild(bodyDiv);
+        // NTID step
+        var ntidStep = _el('div', {id: 'ms-auth-ntid-step'});
+        ntidStep.appendChild(_el('p',
+            {style: 'margin:0 0 0.75rem 0; font-weight:600;'},
+            'Enter your NTID to sign in'));
+
+        var label = document.createElement('label');
+        label.htmlFor = 'ms-auth-ntid-field';
+        label.textContent = 'NTID';
+        label.style.cssText = 'display:block; margin-bottom:0.25rem; font-size:0.9rem;';
+        ntidStep.appendChild(label);
+
+        var ntidInput = _el('input', {
+            type: 'text',
+            id: 'ms-auth-ntid-field',
+            placeholder: 'e.g. melliott',
+            autocomplete: 'username',
+            style: 'margin-bottom:0.25rem;',
+        });
+        ntidStep.appendChild(ntidInput);
+
+        var ntidError = _el('p', {
+            id: 'ms-auth-ntid-error',
+            style: 'margin:0 0 0.5rem 0; color:var(--pico-del-color, #c0392b); font-size:0.8rem; min-height:1.1rem;',
+        }, '');
+        ntidStep.appendChild(ntidError);
+
+        article.appendChild(ntidStep);
+
+        // Device-code step (hidden initially)
+        var codeStep = _el('div', {
+            id: 'ms-auth-code-step',
+            style: 'display:none;',
+        });
+        codeStep.appendChild(_el('p',
+            {style: 'margin:0 0 0.5rem 0; color:var(--pico-muted-color); font-size:0.85rem;'},
+            'Starting sign-in…'));
+        article.appendChild(codeStep);
 
         var footer = _el('footer', {style: 'display:flex; justify-content:flex-end; gap:0.5rem;'});
         var cancelBtn = _el('button', {class: 'secondary outline', id: 'ms-auth-cancel'}, 'Cancel');
+        var continueBtn = _el('button', {
+            id: 'ms-auth-continue',
+            disabled: 'disabled',
+        }, 'Continue');
         footer.appendChild(cancelBtn);
+        footer.appendChild(continueBtn);
         article.appendChild(footer);
 
         modal.appendChild(article);
         document.body.appendChild(modal);
         cancelBtn.addEventListener('click', function () { modal.close(); });
+
+        // Validate NTID on every keystroke
+        ntidInput.addEventListener('input', function () {
+            var val = ntidInput.value.trim();
+            var valid = val.length > 0 && NTID_RE.test(val);
+            continueBtn.disabled = !valid;
+            if (val.length > 0 && !NTID_RE.test(val)) {
+                ntidError.textContent =
+                    'Use letters, numbers, dot, underscore, or hyphen only';
+            } else {
+                ntidError.textContent = '';
+            }
+        });
+
         return modal;
     }
 
-    function _renderDeviceCode(modal, info) {
-        var body = modal.querySelector('#ms-auth-body');
+    /**
+     * Render the NTID entry step. Pre-fills from localStorage if available.
+     * Returns a Promise that resolves to the validated NTID string when the
+     * user clicks Continue, or null if they click Cancel / close the modal.
+     */
+    function _renderNtidStep(modal) {
+        var ntidStep = modal.querySelector('#ms-auth-ntid-step');
+        var codeStep = modal.querySelector('#ms-auth-code-step');
+        var continueBtn = modal.querySelector('#ms-auth-continue');
+        var cancelBtn = modal.querySelector('#ms-auth-cancel');
+        var ntidInput = modal.querySelector('#ms-auth-ntid-field');
+        var ntidError = modal.querySelector('#ms-auth-ntid-error');
+
+        // Show NTID step, hide code step
+        ntidStep.style.display = '';
+        codeStep.style.display = 'none';
+        continueBtn.style.display = '';
+        cancelBtn.style.display = '';
+
+        // Pre-fill from localStorage
+        var saved = (localStorage.getItem(NTID_KEY) || '').trim();
+        ntidInput.value = saved;
+        ntidError.textContent = '';
+        var preValid = saved.length > 0 && NTID_RE.test(saved);
+        continueBtn.disabled = !preValid;
+
+        return new Promise(function (resolve) {
+            var resolved = false;
+
+            function onContinue() {
+                if (resolved) return;
+                var val = ntidInput.value.trim();
+                if (!val || !NTID_RE.test(val)) return;
+                resolved = true;
+                cleanup();
+                resolve(val);
+            }
+
+            function onCancel() {
+                if (resolved) return;
+                resolved = true;
+                cleanup();
+                resolve(null);
+            }
+
+            function onClose() {
+                if (resolved) return;
+                resolved = true;
+                cleanup();
+                resolve(null);
+            }
+
+            function onKeydown(e) {
+                if (e.key === 'Enter') onContinue();
+            }
+
+            function cleanup() {
+                continueBtn.removeEventListener('click', onContinue);
+                cancelBtn.removeEventListener('click', onCancel);
+                modal.removeEventListener('close', onClose);
+                ntidInput.removeEventListener('keydown', onKeydown);
+            }
+
+            continueBtn.addEventListener('click', onContinue);
+            cancelBtn.addEventListener('click', onCancel);
+            modal.addEventListener('close', onClose);
+            ntidInput.addEventListener('keydown', onKeydown);
+
+            // Focus the input
+            setTimeout(function () { ntidInput.focus(); }, 50);
+        });
+    }
+
+    function _renderDeviceCode(modal, info, ntid) {
+        var ntidStep = modal.querySelector('#ms-auth-ntid-step');
+        var codeStep = modal.querySelector('#ms-auth-code-step');
+        var continueBtn = modal.querySelector('#ms-auth-continue');
+
+        // Switch to code step
+        ntidStep.style.display = 'none';
+        codeStep.style.display = '';
+        continueBtn.style.display = 'none';
+
         var safeCode = String(info.user_code || '');
         // Only allow https:// URIs. A javascript: URL in verification_uri would
         // execute on click and could exfiltrate tokens from localStorage.
@@ -174,10 +315,23 @@
         var rawUri = String(info.verification_uri || '');
         var safeUri = rawUri.indexOf('https://') === 0 ? rawUri : '';
 
-        // Clear prior contents (replacing the "Starting sign-in..." placeholder).
-        while (body.firstChild) body.removeChild(body.firstChild);
+        // Clear prior contents.
+        while (codeStep.firstChild) codeStep.removeChild(codeStep.firstChild);
 
-        body.appendChild(_el('p',
+        // NTID line with "edit" link
+        var ntidLine = document.createElement('p');
+        ntidLine.style.cssText =
+            'margin:0 0 0.75rem 0; font-size:0.85rem; color:var(--pico-muted-color);';
+        var ntidLabel = document.createTextNode('NTID: ' + String(ntid) + ' ');
+        ntidLine.appendChild(ntidLabel);
+        var editLink = document.createElement('a');
+        editLink.href = '#';
+        editLink.textContent = '(edit)';
+        editLink.style.cssText = 'font-size:0.8rem;';
+        ntidLine.appendChild(editLink);
+        codeStep.appendChild(ntidLine);
+
+        codeStep.appendChild(_el('p',
             {style: 'margin:0 0 0.75rem 0;'},
             'Open this URL in a browser and enter the code:'));
 
@@ -195,7 +349,7 @@
             uriP.appendChild(_el('span', {id: 'ms-auth-uri'},
                 'Invalid verification URL — please try signing in again.'));
         }
-        body.appendChild(uriP);
+        codeStep.appendChild(uriP);
 
         var row = _el('div', {style: 'display:flex; align-items:center; gap:0.5rem; margin:0.75rem 0;'});
         row.appendChild(_el('code',
@@ -206,9 +360,9 @@
              style: 'width:auto; padding:0.25rem 0.6rem; margin:0;'},
             'Copy code');
         row.appendChild(copyBtn);
-        body.appendChild(row);
+        codeStep.appendChild(row);
 
-        body.appendChild(_el('p',
+        codeStep.appendChild(_el('p',
             {id: 'ms-auth-status',
              style: 'margin:0; color:var(--pico-muted-color); font-size:0.85rem;'},
             'Waiting for sign-in…'));
@@ -220,6 +374,15 @@
                     setTimeout(function () { copyBtn.textContent = 'Copy code'; }, 1500);
                 });
             }
+        });
+
+        // "edit" goes back to NTID step — caller must handle; we signal via a
+        // rejected promise so the outer signIn() can restart.
+        return new Promise(function (resolve) {
+            editLink.addEventListener('click', function (e) {
+                e.preventDefault();
+                resolve('edit');
+            });
         });
     }
 
@@ -236,39 +399,91 @@
     function signIn() {
         var modal = _ensureModal();
         modal.showModal();
-        var cancelled = false;
-        modal.addEventListener('close', function onClose() {
-            cancelled = true;
-            modal.removeEventListener('close', onClose);
-        });
 
-        return fetch('api/auth/microsoft/start', {method: 'POST'})
-            .then(function (resp) {
-                if (!resp.ok) {
-                    return resp.json().catch(function () { return {}; }).then(function (data) {
-                        throw new Error(data.error || 'Failed to start sign-in');
-                    });
+        return _doSignIn(modal);
+    }
+
+    function _doSignIn(modal) {
+        var cancelled = false;
+
+        function onModalClose() {
+            cancelled = true;
+        }
+        modal.addEventListener('close', onModalClose);
+
+        // Step 1: NTID entry
+        return _renderNtidStep(modal).then(function (ntid) {
+            modal.removeEventListener('close', onModalClose);
+
+            if (!ntid) {
+                // User cancelled at NTID step
+                if (!modal.open) {
+                    // Modal already closed by Cancel
+                } else {
+                    modal.close();
                 }
-                return resp.json();
-            })
-            .then(function (info) {
-                _renderDeviceCode(modal, info);
-                var intervalSec = Math.max(1, Number(info.interval) || 5);
-                var expiresInMs = (Number(info.expires_in) || 900) * 1000;
-                var deadline = Date.now() + expiresInMs;
-                return _pollLoop(modal, info.device_code, intervalSec, deadline, function () { return cancelled; });
-            })
-            .then(function (token) {
-                if (token) {
-                    _setStatus(modal, 'Signed in.');
-                    setTimeout(function () { try { modal.close(); } catch (e) { /* ignore */ } }, 600);
-                }
-                return token;
-            })
-            .catch(function (err) {
-                _setStatus(modal, 'Sign-in failed: ' + (err && err.message ? err.message : err));
                 return null;
-            });
+            }
+
+            // Save NTID now so fetchWithAuth picks it up immediately
+            localStorage.setItem(NTID_KEY, ntid);
+
+            // Re-register close listener for the code step
+            cancelled = false;
+            modal.addEventListener('close', onModalClose);
+
+            // Step 2: device-code flow
+            return fetch('api/auth/microsoft/start', {method: 'POST'})
+                .then(function (resp) {
+                    if (!resp.ok) {
+                        return resp.json().catch(function () { return {}; }).then(function (data) {
+                            throw new Error(data.error || 'Failed to start sign-in');
+                        });
+                    }
+                    return resp.json();
+                })
+                .then(function (info) {
+                    var editPromise = _renderDeviceCode(modal, info, ntid);
+                    var intervalSec = Math.max(1, Number(info.interval) || 5);
+                    var expiresInMs = (Number(info.expires_in) || 900) * 1000;
+                    var deadline = Date.now() + expiresInMs;
+
+                    var pollPromise = _pollLoop(modal, info.device_code, intervalSec, deadline,
+                        function () { return cancelled; });
+
+                    // Race: poll completes OR user clicks "edit"
+                    return Promise.race([
+                        pollPromise.then(function (token) { return {type: 'poll', token: token}; }),
+                        editPromise.then(function (sig) { return {type: sig}; }),
+                    ]);
+                })
+                .then(function (result) {
+                    modal.removeEventListener('close', onModalClose);
+
+                    if (result.type === 'edit') {
+                        // User wants to correct their NTID — restart from NTID step.
+                        // The device code is abandoned (they'll get a new one on Continue).
+                        if (modal.open) {
+                            return _doSignIn(modal);
+                        }
+                        return null;
+                    }
+
+                    var token = result.token;
+                    if (token) {
+                        _setStatus(modal, 'Signed in.');
+                        setTimeout(function () {
+                            try { modal.close(); } catch (e) { /* ignore */ }
+                        }, 600);
+                    }
+                    return token || null;
+                })
+                .catch(function (err) {
+                    modal.removeEventListener('close', onModalClose);
+                    _setStatus(modal, 'Sign-in failed: ' + (err && err.message ? err.message : err));
+                    return null;
+                });
+        });
     }
 
     function _pollLoop(modal, deviceCode, intervalSec, deadline, isCancelled) {

@@ -37,7 +37,9 @@ Microsoft account. Sign-in is device-code based -- the server never sees
 your password and stores no session state; the browser holds a Bearer
 token in ``localStorage``.
 
-Click **Sign in to Microsoft** in the nav bar to begin. A modal opens with:
+Click **Sign in to Microsoft** in the nav bar to begin. The modal opens
+to an NTID entry screen first (see `Identity and NTID`_ below). After you
+enter a valid NTID and click **Continue**, the modal shows:
 
 1. A short user code (e.g. ``ABCD-EFGH``) and a **Copy code** button.
 2. A link to ``https://microsoft.com/devicelogin``.
@@ -45,7 +47,8 @@ Click **Sign in to Microsoft** in the nav bar to begin. A modal opens with:
 Open the link in a new tab (the same browser is fine), paste the code, and
 authenticate as yourself. The modal polls every few seconds and closes
 automatically when the sign-in completes. The nav bar swaps the
-**Sign in to Microsoft** button for **Sign out**.
+**Sign in to Microsoft** button for **Sign out** and shows a small NTID
+badge.
 
 Tokens live only in your browser, under the ``localStorage`` keys
 ``aippt_ms_access_token``, ``aippt_ms_refresh_token``,
@@ -70,20 +73,35 @@ Error states
 Identity and NTID
 -----------------
 
-The nav bar shows an ``NTID`` text input next to the sign-in controls.
-This value is sent on two paths:
+Your NTID is collected as the first step of the Microsoft sign-in flow,
+before the device code is issued. When you click **Sign in to Microsoft**
+the modal opens to an NTID entry screen. Type your NTID (``A-Z``, ``a-z``,
+``0-9``, ``.``, ``_``, ``-``) and click **Continue**; the button stays
+disabled until the value is valid, and an inline error explains the
+restriction. **Cancel** aborts the flow without starting the device-code
+exchange.
 
-- As the ``X-AIPPT-NTID`` request header on every authenticated API call
-  (upload, create, AI actions).
+After you click **Continue** the value is saved to ``localStorage``
+(key ``aippt_ntid``) and the modal proceeds to the device-code screen.
+That screen shows a small "NTID: *value* (edit)" line above the code; if
+you spot a typo, click **(edit)** to go back to the NTID screen — you
+will need to complete a fresh device-code exchange because the previous
+code is abandoned.
+
+On successful sign-in, a small ``👤 ntid`` badge appears in the nav bar
+next to **Sign out**. Clicking **Sign out** clears both the Microsoft
+tokens and the saved NTID from ``localStorage``.
+
+The NTID is forwarded on every authenticated API call:
+
+- As the ``X-AIPPT-NTID`` request header (upload, create, AI actions).
 - As a ``user_ntid`` POST field on AI actions; the server forwards it to
   the LLM gateway's ``user:`` header, which AMD's gateway requires for
   attribution.
 
-The field persists to ``localStorage`` (key ``aippt_ntid``) and is hidden
-in view-only mode. Allowed characters are ``A-Z``, ``a-z``, ``0-9``, ``.``,
-``_``, ``-`` -- the server rejects anything else with a 400 before reaching
-SharePoint (path-traversal guard). If you change accounts, update the NTID
-to match before triggering an upload or AI action.
+The server rejects NTIDs that do not match ``^[A-Za-z0-9._-]+$`` with a
+400 (path-traversal guard). The NTID input and badge are hidden in
+view-only mode.
 
 Deck List
 ---------

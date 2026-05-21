@@ -543,6 +543,11 @@
             display: none;
         }
         #tag-filter-info.active { display: flex; justify-content: space-between; align-items: center; }
+        .ntid-badge {
+            font-size: 0.75rem;
+            color: var(--accent, var(--pico-primary));
+            white-space: nowrap;
+        }
     </style>
 </head>
 <body>
@@ -552,8 +557,8 @@
             <li><span id="view-only-badge" style="display:none; background:var(--pico-primary-background); color:var(--pico-primary-inverse); padding:0.15rem 0.5rem; border-radius:1rem; font-size:0.75rem; font-weight:600;">Library Mode</span></li>
         </ul>
         <ul>
-            <li id="ntid-nav-item" style="display:none;">
-                <input type="text" id="ntid-input" placeholder="NTID" style="margin:0; padding:0.25rem 0.5rem; font-size:0.8rem; width:8rem;" title="Your AMD NTID (required for LLM operations)" oninput="saveNtid(this.value)">
+            <li id="ntid-badge-nav-item" style="display:none;">
+                <span class="ntid-badge">&#x1F464; <span id="ntid-badge-text"></span></span>
             </li>
             <li><button class="nav-tags-btn outline" id="tags-toggle-btn" onclick="toggleTagSidebar()">Tags</button></li>
             <li><a href="#" onclick="showDecks(); return false;">Decks</a></li>
@@ -869,23 +874,7 @@
         let viewOnly = false;
 
         function getUserNtid() {
-            return (document.getElementById('ntid-input')?.value || '').trim();
-        }
-
-        function saveNtid(val) {
-            localStorage.setItem('aippt_ntid', val.trim());
-        }
-
-        function initNtid() {
-            const saved = localStorage.getItem('aippt_ntid') || '';
-            const input = document.getElementById('ntid-input');
-            if (input) input.value = saved;
-        }
-
-        function showNtidInput() {
-            if (!viewOnly) {
-                document.getElementById('ntid-nav-item').style.display = '';
-            }
+            return (localStorage.getItem('aippt_ntid') || '').trim();
         }
 
         async function fetchConfig() {
@@ -2093,12 +2082,23 @@
             // Nav buttons: show sign-in OR sign-out (or neither in view-only).
             const signinNav  = document.getElementById('ms-signin-nav-item');
             const signoutNav = document.getElementById('ms-signout-nav-item');
+            const ntidBadgeNav = document.getElementById('ntid-badge-nav-item');
+            const ntidBadgeText = document.getElementById('ntid-badge-text');
             if (viewOnly) {
-                signinNav.style.display  = 'none';
-                signoutNav.style.display = 'none';
+                signinNav.style.display    = 'none';
+                signoutNav.style.display   = 'none';
+                ntidBadgeNav.style.display = 'none';
             } else {
                 signinNav.style.display  = signedIn ? 'none' : '';
                 signoutNav.style.display = signedIn ? '' : 'none';
+                // Show the NTID badge only when signed in and an NTID is saved.
+                const savedNtid = (localStorage.getItem('aippt_ntid') || '').trim();
+                if (signedIn && savedNtid) {
+                    ntidBadgeText.textContent  = savedNtid;
+                    ntidBadgeNav.style.display = '';
+                } else {
+                    ntidBadgeNav.style.display = 'none';
+                }
             }
 
             // Deck upload row: swap real Upload button for a sign-in CTA when
@@ -2124,8 +2124,6 @@
 
         // Load config, decks, sidebar, and taxonomy on page load
         fetchConfig().then(() => {
-            initNtid();
-            showNtidInput();
             applySidebarState();
             if (sidebarOpen) loadSidebarTags();
             // Register the MS auth state listener AFTER fetchConfig so viewOnly
