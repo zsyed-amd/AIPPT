@@ -41,6 +41,10 @@ mcp_servers.json
 .claude/
 !.claude/skills/
 !.claude/skills/**
+.cline/
+.cline_storage/
+.codex/
+.cursor/skills-cursor
 .playwright-mcp/
 .superpowers/
 
@@ -58,6 +62,11 @@ excalidraw-*.png
 enhanced-pipeline-text.md
 git-course-*.md
 test-sections.md
+
+# Test artifacts dropped at repo root by validation sessions
+/slides.csv
+/aippt-*.jpeg
+/aippt-*.png
 
 # Node
 node_modules/
