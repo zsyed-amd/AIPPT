@@ -17,6 +17,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Linux Graph render path: `aippt/render.py` now renames `pdftoppm`'s `slide-NN.png` output to the `Slide{i}.png` pattern that `catalog_deck` globs for, so `/api/decks/{id}/slides` returns populated `image_path` values and the UI thumbnail grid renders. Previously every slide had `image_path: null` even when the upload reported `images_exported: true`.
 - `app.py` startup hook migrated from the deprecated `@app.on_event("startup")` to an `asynccontextmanager` lifespan.
 
+### Documentation
+
+- Get-well pass on the Sphinx reference (`docs/`) to reconcile with features shipped since v3.0. Per-page audit + one PR per touched page per `.local-docs/plans/2026-05-20-docs-get-well.md` (audit results in `2026-05-20-docs-audit-results.md`). Updated `overview.rst` (Graph render, Microsoft auth, skills bullet), `cli.rst` (new `decks` and `mcp` subcommand sections, `serve --host` / `--images-dir` flags), `configuration.rst` (`sharepoint:` block, `gateway.user_header`, `AIPPT_USER_NTID`, `MS_ACCESS_TOKEN`, `BASE_PATH`), `export-images.rst` (Linux/Microsoft Graph path alongside Windows COM), `web-ui.rst` (Microsoft sign-in, NTID input, theme toggle, Instinct reskin, sectioned decks, audience selector), `backup-restore.rst` (audited, no changes), and adopted `sharepoint-setup.md` into the toctree via `myst-parser` so cross-references resolve. `requirements.txt` gained `sphinx`, `sphinx-rtd-theme`, and `myst-parser` so the Sphinx build runs on a clean checkout.
+
 ## [3.5.0] - 2026-05-20 — Linux Image Rendering via Microsoft Graph
 
 ### Added
