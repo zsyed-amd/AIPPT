@@ -90,6 +90,10 @@ provider APIs directly.
      base_url: "https://llm-api.example.com"
      auth_header: "Ocp-Apim-Subscription-Key"
      auth_value_env: "GATEWAY_API_KEY"
+     # Mandatory per-user header (required by some corporate gateways,
+     # e.g. AMD's gateway as of May 2, 2026)
+     user_header: "user"
+     user_value_env: "AIPPT_USER_NTID"
    providers:
      openai:
        path: "/OpenAI"
@@ -104,6 +108,12 @@ Fields:
 - ``auth_header`` -- HTTP header name for authentication
 - ``auth_value_env`` -- Name of the environment variable containing the auth
   token (e.g. ``GATEWAY_API_KEY``)
+- ``user_header`` -- HTTP header name for the per-user identifier (optional;
+  required by gateways that enforce per-user accounting)
+- ``user_value_env`` -- Name of the environment variable containing the user
+  identifier (e.g. ``AIPPT_USER_NTID``). The web UI also accepts this value
+  via the ``X-AIPPT-NTID`` header on each request, which overrides the env
+  var on a per-request basis.
 - ``providers`` -- Maps each provider to a path appended to ``base_url``
 
 Usage::
@@ -113,6 +123,45 @@ Usage::
 
     # Or place gateway.yaml in the project root (the default path)
     python aippt.py create outline.md template.pptx output.pptx --enhance
+
+sharepoint (Microsoft Graph render staging)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Linux and containerized deployments cannot use PowerPoint COM for image
+export. The Graph render pipeline (``PPTX → SharePoint → ?format=pdf →
+pdftoppm → PNGs``) stages files in a SharePoint document library. Required
+only on Linux/containerized deployments; Windows installations with
+PowerPoint can leave this unset.
+
+.. code-block:: yaml
+
+   sharepoint:
+     # Graph site ID — "contoso.sharepoint.com,<site-guid>,<web-guid>"
+     render_site_id: "REPLACE_WITH_SITE_ID"
+     # render_site_id_env: "AIPPT_SP_SITE_ID"
+
+     # Graph drive ID for the document library — "b!xxxxxxxx..."
+     render_drive_id: "REPLACE_WITH_DRIVE_ID"
+     # render_drive_id_env: "AIPPT_SP_DRIVE_ID"
+
+     # Optional: folder path inside the drive (default
+     # "AIPPT/render-staging"). Per-user subfolders (NTID) and per-job
+     # filenames (UUID) are appended automatically.
+     render_root_path: "AIPPT/render-staging"
+
+Fields:
+
+- ``render_site_id`` -- Microsoft Graph site identifier for the staging site
+- ``render_drive_id`` -- Microsoft Graph drive identifier for the document
+  library
+- ``render_root_path`` -- Optional folder path inside the drive (default
+  ``AIPPT/render-staging``)
+
+Each key has an optional ``*_env`` variant that reads the value from the
+named environment variable instead — useful for CI / secret management.
+
+See the ``sharepoint-setup`` page (``docs/sharepoint-setup.md``) for
+provisioning the staging library and finding the site / drive IDs.
 
 Environment Variables
 ---------------------
@@ -132,6 +181,37 @@ Set the environment variable named in your ``gateway.yaml``'s
 ``auth_value_env`` field::
 
     export GATEWAY_API_KEY='your-gateway-token'
+
+If your gateway also requires a per-user identifier (``user_header`` /
+``user_value_env`` in ``gateway.yaml``), set that too::
+
+    export AIPPT_USER_NTID='your-ntid'
+
+The web UI captures this value via the NTID input in the nav bar (persisted
+to ``localStorage``) and sends it as ``X-AIPPT-NTID`` on each request,
+overriding any env-var default on a per-request basis.
+
+Microsoft Graph (Linux Image Export)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The CLI ``export-images`` command on Linux uses the Microsoft Graph render
+pipeline (see ``docs/sharepoint-setup.md``). Set the Graph bearer token in the
+environment so the CLI can authenticate as the current user::
+
+    export MS_ACCESS_TOKEN='eyJ0eXAiOiJKV1Qi...'
+
+The web UI does not use this variable — it passes the bearer obtained from
+the in-browser Microsoft sign-in flow on each request.
+
+Web Deployment
+^^^^^^^^^^^^^^
+
+- ``BASE_PATH`` -- When the web UI is served at a sub-path on a shared
+  domain (e.g. ``https://example.com/aippt/``), set this to the path prefix
+  (with leading and trailing slashes, ``/aippt/``). The server injects
+  ``<base href>`` into ``index.html`` so the SPA's relative ``static/``,
+  ``api/``, ``docs/``, and ``slide-image/`` URLs resolve correctly behind
+  the prefix. Defaults to ``/`` (apex deployment).
 
 View-Only Mode
 ^^^^^^^^^^^^^^
