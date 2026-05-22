@@ -14,7 +14,10 @@ Key features:
 - **Create** -- Convert markdown outlines into polished PowerPoint decks, with
   optional AI enhancement (layout selection, speaker notes, diagram generation)
 - **Catalog** -- Index slides into a SQLite database with content hashing for
-  deduplication and version tracking
+  deduplication and version tracking. Decks created through the web UI record
+  their origin (outline path, engine, theme, generation timestamp) and can be
+  regenerated from source via the **↻ Regenerate** button on the deck card.
+  Use ``aippt decks set-origin`` to backfill origin on existing decks.
 - **Render** -- Export per-slide PNG images via PowerPoint COM on Windows or
   Microsoft Graph (PPTX → SharePoint → PDF → pdftoppm) on Linux. Used by
   Analyze for multimodal AI input and by the web UI for thumbnails.

@@ -18,6 +18,7 @@ from aippt.catalog import (
     get_db,
     display_name,
     get_deck_by_file_hash,
+    get_deck_origin,
     search_slides,
     add_tags,
     get_slide_tags,
@@ -37,6 +38,9 @@ from aippt.catalog import (
 from aippt.export import export_csv
 from aippt import graph
 from aippt.ingest import ingest_deck
+import aippt.pipeline as _pipeline_module
+from aippt.pipeline import PipelineConfig
+from aippt.config import get_template_default, TemplateConfigError
 
 router = APIRouter()
 STATIC_DIR = Path(__file__).parent / "static"
@@ -117,19 +121,308 @@ async def get_deck_by_hash_route(request: Request, sha256: str):
 
 @router.get("/api/decks")
 async def list_decks(request: Request):
-    """API: List all cataloged decks."""
+    """API: List all cataloged decks including derived origin block."""
     db_path = request.app.state.db_path
     conn = get_db(db_path)
     decks = conn.execute(
-        "SELECT id, name, slide_count, cataloged_at, updated_at, author, created_date, modified_date, subject, description FROM decks ORDER BY updated_at DESC"
+        "SELECT id, name, slide_count, cataloged_at, updated_at, author, "
+        "created_date, modified_date, subject, description, "
+        "outline_path, source_script_path, source_engine, source_theme, "
+        "source_generated_at FROM decks ORDER BY updated_at DESC"
     ).fetchall()
     conn.close()
     result = []
     for d in decks:
         deck = dict(d)
         deck["display_name"] = display_name(deck["name"])
+        # Derive origin block inline (avoid per-row DB query)
+        outline_path = deck.pop("outline_path", None)
+        script_path = deck.pop("source_script_path", None)
+        engine = deck.pop("source_engine", None)
+        theme = deck.pop("source_theme", None)
+        generated_at = deck.pop("source_generated_at", None)
+        if script_path:
+            kind = "script"
+        elif outline_path:
+            kind = "outline"
+        else:
+            kind = "upload"
+        deck["origin"] = {
+            "kind": kind,
+            "outline_path": outline_path,
+            "source_script_path": script_path,
+            "engine": engine,
+            "theme": theme,
+            "generated_at": generated_at,
+        }
         result.append(deck)
     return result
+
+
+@router.get("/api/decks/{deck_id}")
+async def get_deck_metadata(deck_id: int, request: Request):
+    """API: Return metadata for a single deck including the ``origin`` block.
+
+    The ``origin`` block includes a derived ``kind`` field
+    (``"outline"`` | ``"script"`` | ``"upload"``) so the SPA can decide
+    whether to show the Regenerate button.
+    """
+    db_path = request.app.state.db_path
+    deck = get_deck_by_id(deck_id, db_path)
+    if deck is None:
+        return JSONResponse({"error": "Deck not found"}, status_code=404)
+    origin = get_deck_origin(deck_id, db_path)
+    return {
+        "id": deck["id"],
+        "name": deck["name"],
+        "display_name": display_name(deck["name"]),
+        "slide_count": deck["slide_count"],
+        "author": deck.get("author", ""),
+        "cataloged_at": deck.get("cataloged_at"),
+        "updated_at": deck.get("updated_at"),
+        "subject": deck.get("subject", ""),
+        "description": deck.get("description", ""),
+        "origin": origin,
+    }
+
+
+@router.post("/api/decks/{deck_id}/regenerate")
+async def regenerate_deck(deck_id: int, request: Request):
+    """API: Rerun the pipeline against the deck's recorded source and replace in place.
+
+    Uses SSE progress streaming (same pattern as ``/api/decks/create``).
+
+    * 403 — view-only mode or missing Bearer token
+    * 404 — deck not found
+    * 409 — deck has no recorded source (upload-only deck)
+    * 410 — source file missing on disk
+    * 200 — streaming SSE response
+    """
+    import asyncio
+    import json
+    import queue as _queue
+    import shutil as _shutil
+
+    if getattr(request.app.state, "view_only", False):
+        return JSONResponse({"error": VIEW_ONLY_MSG}, status_code=403)
+
+    ms_token = _extract_bearer_token(request)
+    if not ms_token:
+        return JSONResponse(
+            {"error": "Microsoft sign-in required for regeneration. "
+                      "Sign in with the Microsoft button and retry."},
+            status_code=403,
+        )
+    ntid, _ntid_err = _ntid_or_400(request)
+    if _ntid_err is not None:
+        return _ntid_err
+
+    db_path = request.app.state.db_path
+    uploads_dir = request.app.state.uploads_dir
+    gateway_config = request.app.state.gateway_config
+    project_root = getattr(request.app.state, "project_root", os.getcwd())
+
+    deck = get_deck_by_id(deck_id, db_path)
+    if deck is None:
+        return JSONResponse({"error": "Deck not found"}, status_code=404)
+
+    origin = get_deck_origin(deck_id, db_path)
+    if origin["kind"] == "upload":
+        return JSONResponse(
+            {"error": "deck has no recorded source; regeneration requires an outline or script"},
+            status_code=409,
+        )
+
+    # Resolve the source path: stable per-deck location first, then fallback
+    source_path = None
+    stable_outline = os.path.join(_sources_dir(uploads_dir, deck_id), "outline.md")
+    if os.path.exists(stable_outline):
+        source_path = stable_outline
+    elif origin.get("outline_path") and os.path.exists(origin["outline_path"]):
+        source_path = origin["outline_path"]
+
+    if source_path is None:
+        return JSONResponse(
+            {"error": "Source file is missing on disk; regeneration not possible. "
+                      "Re-upload the outline to regenerate."},
+            status_code=410,
+        )
+
+    try:
+        template_path = get_template_default()
+    except TemplateConfigError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=503)
+
+    if not os.path.exists(template_path):
+        return JSONResponse(
+            {"error": f"Template not found: {template_path}"},
+            status_code=404,
+        )
+
+    # Read the source outline
+    with open(source_path, encoding="utf-8") as f:
+        md_text = f.read()
+
+    # Determine output path (reuse existing deck file_path if present)
+    existing_file_path = deck.get("file_path", "")
+    if existing_file_path:
+        existing_file_path = _resolve_db_path(existing_file_path, project_root)
+    if existing_file_path and os.path.exists(os.path.dirname(existing_file_path)):
+        output_path = existing_file_path
+    else:
+        # Reconstruct output path under uploads
+        _short_id = uuid.uuid4().hex[:8]
+        _base_name = re.sub(r'[^\w\s-]', '', display_name(deck["name"])).strip()[:80]
+        output_path = os.path.join(uploads_dir, f"{_short_id}_{_base_name}.pptx")
+
+    engine = origin.get("engine") or "python-pptx"
+    theme = origin.get("theme")
+
+    # Log the regeneration action
+    logger.info(
+        "regenerate_deck: deck_id=%s ntid=%s source=%s engine=%s",
+        deck_id, ntid, source_path, engine,
+    )
+
+    event_q: _queue.Queue = _queue.Queue()
+
+    def create_progress(step, detail=""):
+        status = "running"
+        if any(detail.startswith(w) for w in ("Parsed", "All", "Built")):
+            status = "done"
+        event_q.put(("progress", {"step": step, "status": status, "detail": detail}))
+
+    def ingest_progress(step, detail=""):
+        ingest_map = {
+            "export_images": "running", "export_images_done": "running",
+            "export_images_skipped": "running", "catalog": "running",
+            "catalog_done": "running", "complete": "done",
+        }
+        if step in ingest_map:
+            event_q.put(("progress", {"step": "ingest", "status": ingest_map[step], "detail": detail}))
+
+    async def _event_generator():
+        loop = asyncio.get_running_loop()
+
+        def _worker():
+            pipeline_config = PipelineConfig(
+                outline_text=md_text,
+                template_path=template_path,
+                output_path=output_path,
+                enhance=False,  # regenerate uses stored outline as-is
+                gateway_config=gateway_config,
+                progress_callback=create_progress,
+                outline_path=source_path,
+                source_engine=engine,
+                source_kind="outline",
+                source_theme=theme,
+            )
+            pipeline_result = _pipeline_module.run_pipeline(pipeline_config)
+
+            event_q.put(("progress", {"step": "ingest", "status": "running", "detail": "Re-cataloging generated deck..."}))
+
+            # Re-catalog in place: delete old slide rows, re-insert from new PPTX.
+            # Preserve the existing deck_id by updating the existing row.
+            import datetime as _dt
+            now_iso = _dt.datetime.utcnow().isoformat()
+
+            from aippt.catalog import file_hash as _file_hash
+            new_hash = _file_hash(output_path)
+
+            _conn = get_db(db_path)
+            try:
+                # Remove old slides (CASCADE would also work but be explicit)
+                _conn.execute("DELETE FROM slides WHERE deck_id = ?", (deck_id,))
+                # Re-catalog the new PPTX into the existing deck row
+                from pptx import Presentation as _Prs
+                prs_new = _Prs(output_path)
+                from aippt.catalog import _resolve_slide_title, content_hash as _chash
+                from aippt.reverse import extract_text_from_shape
+                for i, slide in enumerate(prs_new.slides, 1):
+                    title, title_fallback = _resolve_slide_title(slide)
+                    texts = []
+                    for shape in slide.shapes:
+                        if shape == slide.shapes.title:
+                            continue
+                        if title_fallback and shape == title_fallback:
+                            continue
+                        txt = extract_text_from_shape(shape)
+                        if txt:
+                            texts.append(txt)
+                    content_text = "\n".join(texts)
+                    chash = _chash(title, content_text)
+                    notes = ""
+                    if slide.has_notes_slide:
+                        notes = slide.notes_slide.notes_text_frame.text.strip()
+                    images_dir_for_regen = _per_deck_images_dir(request, output_path)
+                    image_path = None
+                    for ext in (".png", ".PNG", ".jpg", ".jpeg"):
+                        candidate = os.path.join(images_dir_for_regen, f"Slide{i}{ext}")
+                        if os.path.exists(candidate):
+                            image_path = os.path.relpath(os.path.abspath(candidate), project_root)
+                            break
+                    _conn.execute(
+                        """INSERT INTO slides (deck_id, position, title, content_text,
+                           content_hash, notes, image_path)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        (deck_id, i, title, content_text, chash, notes, image_path),
+                    )
+                # Update the deck row (keep same id)
+                _conn.execute(
+                    """UPDATE decks SET file_hash = ?, slide_count = ?,
+                       outline_path = ?, source_engine = ?, source_theme = ?,
+                       source_generated_at = ?, updated_at = datetime('now')
+                       WHERE id = ?""",
+                    (new_hash, len(prs_new.slides),
+                     source_path, engine, theme, now_iso, deck_id),
+                )
+                _conn.commit()
+            finally:
+                _conn.close()
+
+            return {
+                "deck_id": deck_id,
+                "deck_name": deck["name"],
+                "slide_count": pipeline_result.slide_count,
+                "output_path": output_path,
+            }
+
+        future = loop.run_in_executor(None, _worker)
+
+        def _format_sse(event_name, payload):
+            return f"event: {event_name}\ndata: {json.dumps(payload)}\n\n"
+
+        while not future.done():
+            await asyncio.sleep(0)
+            while True:
+                try:
+                    event_name, payload = event_q.get_nowait()
+                    yield _format_sse(event_name, payload)
+                except _queue.Empty:
+                    break
+
+        while True:
+            try:
+                event_name, payload = event_q.get_nowait()
+                yield _format_sse(event_name, payload)
+            except _queue.Empty:
+                break
+
+        try:
+            result = await future
+        except Exception as exc:
+            yield _format_sse("error", {"detail": str(exc)})
+            return
+
+        yield _format_sse("complete", {
+            "deck_id": result["deck_id"],
+            "deck_name": result["deck_name"],
+            "display_name": display_name(result["deck_name"]),
+            "slide_count": result["slide_count"],
+            "output_path": result["output_path"],
+        })
+
+    return StreamingResponse(_event_generator(), media_type="text/event-stream")
 
 
 @router.get("/api/decks/{deck_id}/slides")
@@ -737,6 +1030,24 @@ async def serve_slide_image(slide_id: int, request: Request):
 # ---------------------------------------------------------------------------
 
 
+def _sources_dir(uploads_dir: str, deck_id: int) -> str:
+    """Return the stable per-deck source storage directory.
+
+    ``uploads/sources/<deck_id>/`` is the canonical location for the originating
+    outline (.md) and generated scripts (.mjs/.py).  Created on first use.
+
+    Args:
+        uploads_dir: The app's uploads root (``app.state.uploads_dir``).
+        deck_id: The deck's integer DB ID.
+
+    Returns:
+        Absolute path to the per-deck sources directory (created if absent).
+    """
+    path = os.path.join(uploads_dir, "sources", str(deck_id))
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 def _per_deck_images_dir(request: Request, deck_path: str) -> str:
     """Resolve the per-deck images directory under app.state.images_dir.
 
@@ -1228,9 +1539,6 @@ async def create_deck_stream(
     import json
     import queue as _queue
 
-    from aippt.pipeline import run_pipeline, PipelineConfig
-    from aippt.config import get_template_default, TemplateConfigError
-
     # --- Validate inputs before entering SSE mode ---
     md_text = None
     if outline_text and outline_text.strip():
@@ -1317,8 +1625,10 @@ async def create_deck_stream(
                 gateway_config=gateway_config,
                 progress_callback=create_progress,
                 outline_path=outline_save_path,
+                source_engine="python-pptx",
+                source_kind="outline",
             )
-            pipeline_result = run_pipeline(pipeline_config)
+            pipeline_result = _pipeline_module.run_pipeline(pipeline_config)
             result = {
                 "output_path": pipeline_result.output_path,
                 "slide_count": pipeline_result.slide_count,
@@ -1334,7 +1644,27 @@ async def create_deck_stream(
                 progress_callback=ingest_progress,
                 ms_token=ms_token,
                 ntid=ntid,
+                # outline_path will be set below after we know deck_id
             )
+            # Copy outline to stable per-deck source location
+            deck_id = ingest_result["deck_id"]
+            try:
+                import shutil as _shutil
+                stable_dir = _sources_dir(uploads_dir, deck_id)
+                stable_outline = os.path.join(stable_dir, "outline.md")
+                _shutil.copy2(outline_save_path, stable_outline)
+                # Update the deck row with the stable outline path
+                _conn = get_db(db_path)
+                _conn.execute(
+                    "UPDATE decks SET outline_path = ?, source_engine = ?, "
+                    "source_generated_at = datetime('now'), updated_at = datetime('now') "
+                    "WHERE id = ?",
+                    (stable_outline, "python-pptx", deck_id),
+                )
+                _conn.commit()
+                _conn.close()
+            except Exception as _exc:
+                logger.warning("Failed to persist outline origin for deck %s: %s", deck_id, _exc)
             return {**result, **ingest_result}
 
         future = loop.run_in_executor(None, _worker)

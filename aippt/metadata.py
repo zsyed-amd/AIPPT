@@ -175,6 +175,63 @@ def append_history_entry(slide, entry_text: str, source_tag: str | None = None) 
     )
 
 
+def write_deck_lineage(
+    pptx_path: str,
+    source: str,
+    engine: str | None = None,
+    theme: str | None = None,
+    generated_at: str | None = None,
+) -> None:
+    """Open a PPTX file, embed an [AIPPT-META] lineage entry on slide 1, and save.
+
+    This is the canonical call site for recording deck origin after the pipeline
+    produces the PPTX file.  It is idempotent: calling it again on a deck that
+    already has a lineage entry replaces the existing entry (by appending a new
+    one alongside existing metadata entries).
+
+    Args:
+        pptx_path: Absolute or CWD-relative path to the .pptx file.
+        source: Lineage string, e.g. "outline -> pptxgenjs".
+        engine: Engine used ('pptxgenjs', 'python-pptx', etc.).
+        theme: Theme name ('amd', 'default', etc.).
+        generated_at: ISO timestamp; defaults to now.
+    """
+    from pptx import Presentation
+
+    generated_at = generated_at or datetime.now(timezone.utc).isoformat()
+
+    try:
+        prs = Presentation(pptx_path)
+    except Exception as exc:
+        logger.warning("write_deck_lineage: could not open %s: %s", pptx_path, exc)
+        return
+
+    if not prs.slides:
+        logger.warning("write_deck_lineage: presentation has no slides; skipping")
+        return
+
+    slide = prs.slides[0]
+    lineage_entry = create_lineage_entry(
+        source=source,
+        theme=theme,
+        created=generated_at[:10] if generated_at else None,
+    )
+    # Add engine and generated_at explicitly so they surface in the JSON block
+    lineage_entry["engine"] = engine
+    lineage_entry["generated_at"] = generated_at
+
+    existing_entries = extract_metadata(slide)
+    existing_entries.append(lineage_entry)
+    human_notes = extract_notes_text(slide)
+    try:
+        slide.notes_slide.notes_text_frame.text = format_notes_with_metadata(
+            human_notes, existing_entries
+        )
+        prs.save(pptx_path)
+    except Exception as exc:
+        logger.warning("write_deck_lineage: could not save %s: %s", pptx_path, exc)
+
+
 def get_slide_lineage(slide) -> dict:
     """Extract source lineage information from a slide's metadata.
 

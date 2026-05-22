@@ -807,6 +807,54 @@ def list_decks(db_path: str = "slides.db") -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 
+def get_deck_origin(deck_id: int, db_path: str = "slides.db") -> dict:
+    """Return the derived origin block for a deck.
+
+    Reads the 5 origin columns and computes ``kind`` from their state:
+
+    * ``outline_path`` set, ``source_script_path`` NULL  →  ``"outline"``
+    * ``source_script_path`` set (regardless of outline)  →  ``"script"``
+    * Both NULL  →  ``"upload"``
+
+    Args:
+        deck_id: The deck ID.
+        db_path: Path to the SQLite database.
+
+    Returns:
+        Dict with keys: ``kind``, ``outline_path``, ``source_script_path``,
+        ``engine``, ``theme``, ``generated_at``.  Returns ``None`` if deck
+        not found.
+    """
+    conn = get_db(db_path)
+    row = conn.execute(
+        "SELECT outline_path, source_script_path, source_engine, "
+        "source_theme, source_generated_at FROM decks WHERE id = ?",
+        (deck_id,),
+    ).fetchone()
+    conn.close()
+    if row is None:
+        return None
+
+    outline_path = row["outline_path"]
+    script_path = row["source_script_path"]
+
+    if script_path:
+        kind = "script"
+    elif outline_path:
+        kind = "outline"
+    else:
+        kind = "upload"
+
+    return {
+        "kind": kind,
+        "outline_path": outline_path,
+        "source_script_path": script_path,
+        "engine": row["source_engine"],
+        "theme": row["source_theme"],
+        "generated_at": row["source_generated_at"],
+    }
+
+
 def remove_slide_tag(
     slide_id: int,
     tag_name: str,

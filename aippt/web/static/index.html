@@ -871,6 +871,42 @@
 
         <!-- Duplicate-upload modal: rendered before upload starts when -->
         <!-- /api/decks/by-hash/{sha256} returns 200 for the chosen file. -->
+        <!-- Regenerate from source: confirmation dialog -->
+        <dialog id="regen-confirm-dialog">
+            <article style="max-width:34rem;">
+                <header>
+                    <button aria-label="Close" rel="prev" onclick="closeRegenDialog()"></button>
+                    <h3>Regenerate "<span id="regen-deck-name"></span>"?</h3>
+                </header>
+                <p style="font-size:0.9rem;">
+                    <strong>Source:</strong> <code id="regen-source-path" style="word-break:break-all;"></code><br>
+                    <strong>Engine:</strong> <span id="regen-engine"></span><br>
+                    <strong>Last generated:</strong> <span id="regen-last-generated"></span>
+                </p>
+                <p style="font-size:0.85rem; color:var(--pico-muted-color);">
+                    The existing PPTX and slide catalog rows will be replaced in place.
+                    The source file is unchanged. Tags are preserved by position.
+                </p>
+                <footer style="display:flex; gap:0.5rem; justify-content:flex-end;">
+                    <button class="outline" onclick="closeRegenDialog()">Cancel</button>
+                    <button onclick="confirmRegenerate()">&#x21BB; Regenerate</button>
+                </footer>
+            </article>
+        </dialog>
+
+        <!-- Regenerate from source: progress dialog -->
+        <dialog id="regen-progress-dialog">
+            <article style="max-width:34rem;">
+                <header>
+                    <h3 id="regen-progress-title">Regenerating...</h3>
+                </header>
+                <ul id="regen-progress-list" style="font-size:0.85rem; max-height:12rem; overflow-y:auto; list-style:none; padding:0; margin:0;"></ul>
+                <footer style="display:flex; justify-content:flex-end; margin-top:1rem;">
+                    <button id="regen-done-btn" style="display:none;" onclick="document.getElementById('regen-progress-dialog').close()">Done</button>
+                </footer>
+            </article>
+        </dialog>
+
         <dialog id="dup-upload-dialog">
             <article style="max-width:32rem;">
                 <header>
@@ -1161,6 +1197,103 @@
             }
         }
 
+        // Regeneration modal state
+        let regenDeckId = null;
+        let regenDeckName = '';
+
+        function showRegenConfirm(deckId, deckName, origin) {
+            regenDeckId = deckId;
+            regenDeckName = deckName;
+            const sourcePath = origin.outline_path || origin.source_script_path || '(unknown)';
+            const lastGen = origin.generated_at ? origin.generated_at.slice(0, 16).replace('T', ' ') : 'never';
+            const engineLabel = origin.engine || 'unknown engine';
+            document.getElementById('regen-deck-name').textContent = deckName;
+            document.getElementById('regen-source-path').textContent = sourcePath;
+            document.getElementById('regen-last-generated').textContent = lastGen;
+            document.getElementById('regen-engine').textContent = engineLabel;
+            document.getElementById('regen-confirm-dialog').showModal();
+        }
+
+        function closeRegenDialog() {
+            document.getElementById('regen-confirm-dialog').close();
+            regenDeckId = null;
+        }
+
+        async function confirmRegenerate() {
+            if (!regenDeckId) return;
+            document.getElementById('regen-confirm-dialog').close();
+            const deckId = regenDeckId;
+            const deckName = regenDeckName;
+            regenDeckId = null;
+
+            // Show dedicated regeneration progress dialog
+            const progDlg = document.getElementById('regen-progress-dialog');
+            const progList = document.getElementById('regen-progress-list');
+            progList.innerHTML = '';
+            document.getElementById('regen-progress-title').textContent = `Regenerating "${deckName}"...`;
+            document.getElementById('regen-done-btn').style.display = 'none';
+            progDlg.showModal();
+
+            const msToken = msAuth ? msAuth.getToken() : '';
+            const ntid = getUserNtid();
+            const headers = {};
+            if (msToken) headers['Authorization'] = `Bearer ${msToken}`;
+            if (ntid) headers['X-AIPPT-NTID'] = ntid;
+
+            // Use fetch for SSE so we can send auth headers (EventSource doesn't support them)
+            let reader;
+            try {
+                const resp = await fetch(`api/decks/${deckId}/regenerate`, {
+                    method: 'POST',
+                    headers,
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    toast(`Regeneration failed: ${err.detail || err.error || resp.status}`);
+                    progDlg.close();
+                    return;
+                }
+                reader = resp.body.getReader();
+            } catch (e) {
+                toast(`Regeneration error: ${e.message}`);
+                progDlg.close();
+                return;
+            }
+
+            const decoder = new TextDecoder();
+            let buf = '';
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buf += decoder.decode(value, { stream: true });
+                const blocks = buf.split('\n\n');
+                buf = blocks.pop();
+                for (const block of blocks) {
+                    const dataLine = block.split('\n').find(l => l.startsWith('data:'));
+                    const eventLine = block.split('\n').find(l => l.startsWith('event:'));
+                    if (!dataLine) continue;
+                    const eventName = eventLine ? eventLine.slice(6).trim() : 'message';
+                    let payload;
+                    try { payload = JSON.parse(dataLine.slice(5)); } catch { continue; }
+                    if (eventName === 'progress') {
+                        const li = document.createElement('li');
+                        li.textContent = `[${payload.step}] ${payload.detail || payload.status}`;
+                        progList.appendChild(li);
+                        progList.scrollTop = progList.scrollHeight;
+                    } else if (eventName === 'complete') {
+                        document.getElementById('regen-progress-title').textContent =
+                            `Regenerated "${deckName}" — ${payload.slide_count} slides`;
+                        document.getElementById('regen-done-btn').style.display = '';
+                        showDecks();
+                    } else if (eventName === 'error') {
+                        toast(`Regeneration error: ${payload.detail || payload.error || 'unknown'}`);
+                        progDlg.close();
+                        return;
+                    }
+                }
+            }
+        }
+
         async function showDecks() {
             hide('slide-browser');
             hide('search-view');
@@ -1173,9 +1306,18 @@
             if (!resp.ok) { toast('Error loading decks'); return; }
             const decks = await resp.json();
             const tbody = document.getElementById('deck-tbody');
-            tbody.innerHTML = decks.map(d => `
+            tbody.innerHTML = decks.map(d => {
+                const origin = d.origin || {};
+                const hasSource = origin.kind === 'outline' || origin.kind === 'script';
+                const originBadge = origin.kind && origin.kind !== 'upload'
+                    ? `<span title="Origin: ${esc(origin.kind)} → ${esc(origin.engine || '?')}" style="font-size:0.7rem; background:var(--pico-primary-background); color:var(--pico-primary-inverse); padding:0.1rem 0.4rem; border-radius:1rem; margin-left:0.4rem; vertical-align:middle;">${esc(origin.kind)}</span>`
+                    : '';
+                const regenBtn = hasSource && !viewOnly
+                    ? `<button class="outline" style="width:auto; padding:0.3rem 0.7rem; font-size:0.8rem; margin-left:0.3rem;" onclick="showRegenConfirm(${d.id}, '${escAttr(d.display_name || d.name)}', ${JSON.stringify(origin).replace(/"/g, '&quot;')})">&#x21BB; Regenerate</button>`
+                    : '';
+                return `
                 <tr style="cursor:pointer" onclick="browseDeck(${d.id}, '${escAttr(d.display_name || d.name)}')">
-                    <td><strong>${esc(d.display_name || d.name)}</strong></td>
+                    <td><strong>${esc(d.display_name || d.name)}</strong>${originBadge}</td>
                     <td><span class="stat-number">${d.slide_count}</span></td>
                     <td>${esc(d.author || '')}</td>
                     <td>${fmtDate(d.created_date || d.cataloged_at)}</td>
@@ -1183,10 +1325,11 @@
                     <td onclick="event.stopPropagation()">
                         <button class="outline" style="width:auto; padding:0.3rem 0.7rem; font-size:0.8rem;" onclick="downloadDeck(${d.id})">Download</button>
                         <button class="outline" style="width:auto; padding:0.3rem 0.7rem; font-size:0.8rem; margin-left:0.3rem;" onclick="writeNotesToDeck(${d.id})">Write Notes to Deck</button>
+                        ${regenBtn}
                         ${window.isAdmin ? `<button class="outline admin-delete-btn" style="width:auto; padding:0.3rem 0.7rem; font-size:0.8rem; margin-left:0.3rem;" onclick="promptDeleteDeck(${d.id}, '${escAttr(d.display_name || d.name)}', ${d.slide_count})">Delete</button>` : ''}
                     </td>
-                </tr>
-            `).join('');
+                </tr>`;
+            }).join('');
         }
 
         async function browseDeck(deckId, name) {

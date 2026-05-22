@@ -38,6 +38,11 @@ class PipelineConfig:
     # File context
     outline_path: Optional[str] = None
 
+    # Source / origin tracking
+    source_engine: Optional[str] = "python-pptx"
+    source_theme: Optional[str] = None
+    source_kind: Optional[str] = "outline"
+
     # Corporate template merge
     corp_template: Optional[str] = None
 
@@ -52,6 +57,9 @@ class PipelineResult:
     output_path: str
     slide_count: int
     title: str
+    engine: Optional[str] = None
+    theme: Optional[str] = None
+    source_kind: Optional[str] = None
 
 
 def run_pipeline(config: PipelineConfig) -> PipelineResult:
@@ -390,9 +398,29 @@ def run_pipeline(config: PipelineConfig) -> PipelineResult:
             if os.path.exists(pre_merge):
                 os.unlink(pre_merge)
 
+    # Embed [AIPPT-META] lineage on slide 1 of the generated PPTX
+    if config.source_kind and len(prs.slides) > 0:
+        from datetime import datetime, timezone as _tz
+        from aippt.metadata import write_deck_lineage
+        engine_label = config.source_engine or "python-pptx"
+        source_str = f"{config.source_kind} -> {engine_label}"
+        try:
+            write_deck_lineage(
+                pptx_path=config.output_path,
+                source=source_str,
+                engine=engine_label,
+                theme=config.source_theme,
+                generated_at=datetime.now(_tz.utc).isoformat(),
+            )
+        except Exception as _exc:
+            logger.warning("write_deck_lineage failed (non-fatal): %s", _exc)
+
     title = slides[0]['title'] if slides else ""
     return PipelineResult(
         output_path=config.output_path,
         slide_count=len(prs.slides),
         title=title,
+        engine=config.source_engine,
+        theme=config.source_theme,
+        source_kind=config.source_kind,
     )

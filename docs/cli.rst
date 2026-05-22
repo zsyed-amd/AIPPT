@@ -637,6 +637,7 @@ Subcommands:
 - ``rename <deck> <new_name>`` -- Set a deck's display name
 - ``delete <deck>`` -- Delete a deck and all associated catalog data
 - ``source <deck>`` -- Show the source script path for a generated deck
+- ``set-origin <deck>`` -- Set or backfill the origin for an existing deck
 
 ``<deck>`` accepts a deck ID (integer) or a substring of the deck name.
 
@@ -654,6 +655,19 @@ Common options:
 
 - ``--cat`` -- Print the script contents to stdout
 
+``set-origin`` options:
+
+- ``--outline PATH`` -- Markdown outline file that produced this deck
+- ``--script PATH`` -- Generator script (``.mjs`` or ``.py``) that produced this deck
+- ``--engine {pptxgenjs,python-pptx}`` -- Engine used to generate the deck
+- ``--theme NAME`` -- Theme name used (e.g. ``amd``, ``default``)
+
+Exactly one of ``--outline`` or ``--script`` must be provided.  Paths are
+stored as absolute paths; the column written depends on which flag is
+given (``outline_path`` or ``source_script_path``).  After running
+``set-origin``, the **↻ Regenerate** button appears on the deck card in
+the web UI.
+
 Examples::
 
     python aippt.py decks list
@@ -662,6 +676,10 @@ Examples::
     python aippt.py decks rename 42 "Zero Trust Architecture v3"
     python aippt.py decks delete 42 --force --purge-images
     python aippt.py decks source 42 --cat
+
+    # Backfill origin on an existing cataloged deck
+    python aippt.py decks set-origin "Matt Elliott Intro" --outline source-material/intro.md
+    python aippt.py decks set-origin 7 --script output/q1-roadmap.mjs --engine pptxgenjs --theme amd
 
 mcp
 ---

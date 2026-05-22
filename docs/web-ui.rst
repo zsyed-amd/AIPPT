@@ -122,6 +122,41 @@ From the deck list you can:
 - **Write Notes to Deck** -- push database notes back into the PPTX file
   (creates a ``.pptx.bak`` backup first).
 
+Regenerate from Source
+^^^^^^^^^^^^^^^^^^^^^^
+
+Decks generated through the **Create from Outline** panel carry their
+origin (the outline file, engine, and theme) in the catalog. When origin
+information is present the deck card shows:
+
+- An **Origin** badge (e.g. ``outline → python-pptx · amd``) with the
+  engine and theme used.
+- A **↻ Regenerate** button that reruns the same pipeline against the
+  stored outline and replaces the deck in place.
+
+Clicking **↻ Regenerate** opens a confirmation modal that shows:
+
+- The stable source path (``uploads/sources/<deck_id>/outline.md``).
+- The date the deck was last generated.
+- A reminder that the existing PPTX and slide catalog rows will be
+  replaced (tags are preserved).
+
+Confirm to start the pipeline. Progress streams in real time via the same
+SSE events as **Create from Outline** (parse → enhance → build → ingest).
+When regeneration completes, the deck row updates in place -- the
+``deck_id`` is unchanged.
+
+**View-only mode:** The **↻ Regenerate** button is hidden and the endpoint
+returns 403.
+
+**Missing source file:** If the stored source file has been removed from
+disk, the endpoint returns 410 with a message indicating the path.
+Backfill the origin using ``aippt decks set-origin`` (see :doc:`cli`).
+
+**Upload-only decks** (no recorded source) do not show the Origin badge
+or Regenerate button. ``GET /api/decks/{id}`` returns
+``origin: {kind: "upload", ...}`` for these decks.
+
 Creating Presentations from Outlines
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 

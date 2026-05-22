@@ -743,6 +743,75 @@ def cmd_decks(args):
 
         return 0
 
+    if action == "set-origin":
+        from aippt.catalog import get_db as _get_db, resolve_deck as _resolve_deck
+        result = resolve_deck(args.deck, db_path=args.db)
+        if result is None:
+            print(f"No deck found matching '{args.deck}'")
+            return 1
+        if isinstance(result, list):
+            print(f"Multiple decks match '{args.deck}':")
+            for d in result:
+                print(f"  ID {d['id']}: {display_name(d['name'])}")
+            print("Use a more specific name or the deck ID.")
+            return 1
+
+        deck = result
+        outline_path = getattr(args, "outline", None)
+        script_path = getattr(args, "script", None)
+        engine = getattr(args, "engine", None)
+        theme = getattr(args, "theme", None)
+
+        if not outline_path and not script_path:
+            print("Error: provide --outline or --script (or both) to set origin.")
+            return 1
+
+        # Validate paths exist
+        if outline_path and not os.path.exists(outline_path):
+            print(f"Warning: outline file not found: {outline_path}")
+        if script_path and not os.path.exists(script_path):
+            print(f"Warning: script file not found: {script_path}")
+
+        # Auto-detect engine from script if not provided
+        if script_path and not engine:
+            from aippt.catalog import detect_source_engine
+            engine = detect_source_engine(script_path)
+
+        conn = _get_db(args.db)
+        fields = ["updated_at = datetime('now')"]
+        params = []
+        if outline_path is not None:
+            fields.append("outline_path = ?")
+            params.append(os.path.abspath(outline_path))
+        if script_path is not None:
+            fields.append("source_script_path = ?")
+            params.append(os.path.abspath(script_path))
+        if engine is not None:
+            fields.append("source_engine = ?")
+            params.append(engine)
+        if theme is not None:
+            fields.append("source_theme = ?")
+            params.append(theme)
+        params.append(deck["id"])
+        conn.execute(
+            f"UPDATE decks SET {', '.join(fields)} WHERE id = ?",
+            params,
+        )
+        conn.commit()
+        conn.close()
+
+        dname = display_name(deck["name"])
+        print(f'Updated origin for deck {deck["id"]} "{dname}":')
+        if outline_path:
+            print(f"  Outline: {os.path.abspath(outline_path)}")
+        if script_path:
+            print(f"  Script:  {os.path.abspath(script_path)}")
+        if engine:
+            print(f"  Engine:  {engine}")
+        if theme:
+            print(f"  Theme:   {theme}")
+        return 0
+
     if action == "source":
         result = resolve_deck(args.deck, db_path=args.db)
         if result is None:
@@ -1623,6 +1692,22 @@ def build_parser():
     p_decks_source.add_argument("deck", help="Deck ID or name substring")
     p_decks_source.add_argument("--db", default="slides.db")
     p_decks_source.add_argument("--cat", action="store_true", help="Print the script contents")
+
+    p_decks_setorigin = decks_sub.add_parser(
+        "set-origin",
+        help="Backfill origin metadata on an existing cataloged deck",
+    )
+    p_decks_setorigin.add_argument("deck", help="Deck ID or name substring")
+    p_decks_setorigin.add_argument("--db", default="slides.db")
+    p_decks_setorigin.add_argument("--outline", default=None,
+                                   help="Path to the originating markdown outline")
+    p_decks_setorigin.add_argument("--script", default=None,
+                                   help="Path to the generating script (JS/Python)")
+    p_decks_setorigin.add_argument("--engine", default=None,
+                                   choices=["pptxgenjs", "python-pptx"],
+                                   help="Source engine (auto-detected from script if omitted)")
+    p_decks_setorigin.add_argument("--theme", default=None,
+                                   help="Theme name (e.g. 'amd', 'default')")
 
     # ingest
     p_ingest = sub.add_parser("ingest", help="Ingest a deck: export images, catalog, and optionally tag")

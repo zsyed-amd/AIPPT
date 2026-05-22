@@ -186,6 +186,28 @@ Override per-instance with ``aippt serve --max-upload-mb N``. For
 container deployments, raise the matching ingress annotation (e.g.
 ``nginx.ingress.kubernetes.io/proxy-body-size: 50m``) to the same value.
 
+Source Storage
+^^^^^^^^^^^^^^
+
+Decks generated through the web **Create from Outline** panel store a
+copy of their originating outline at a stable per-deck location inside
+the uploads directory::
+
+    uploads/sources/<deck_id>/outline.md
+
+This copy is made immediately after the pipeline succeeds and before the
+catalog row is finalized. The catalog row's ``outline_path`` column points
+to this stable path so regeneration never depends on a temporary upload
+location or a local file that may have moved.
+
+For script-based decks the layout is the same with a ``.mjs`` filename
+instead of ``outline.md``; the ``source_engine`` column disambiguates.
+
+The ``uploads/sources/`` tree should be backed up alongside ``uploads/``
+and the SQLite database. If the source file for a deck is missing on disk,
+regeneration returns HTTP 410; use ``aippt decks set-origin`` to supply a
+replacement.
+
 Admin Tier (v1)
 ^^^^^^^^^^^^^^^
 

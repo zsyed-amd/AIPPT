@@ -8,10 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `POST /api/decks/{deck_id}/regenerate` reruns the pipeline against the
+  deck's recorded source (outline or script) and replaces the catalog
+  entry in place. SSE progress stream matches `/api/decks/create`.
+  View-only rejects 403; missing source returns 409.
+- Web `/api/decks/create` now persists the originating outline to
+  `uploads/sources/<deck_id>/outline.md` and populates the existing
+  origin columns on the `decks` row (`outline_path`, `source_engine`,
+  `source_theme`, `source_generated_at`).
+- Generated decks embed a `[AIPPT-META]` lineage entry on slide 1
+  recording source kind, engine, theme, and generation timestamp.
+- `aippt decks set-origin <id-or-name>` subcommand for backfilling
+  origin on existing cataloged decks.
+- SPA shows an "Origin" badge and a "↻ Regenerate from source" button
+  on the deck card when the deck has a recorded source. Hidden in
+  view-only mode.
 - **Admin: Live Log Panel** — a "Logs" button appears in the nav bar only when `whoami.is_admin === true`. Clicking it opens a `<dialog>` that polls `GET /api/logs?cursor=<last>` every second and streams new log lines into a scrollable monochrome pane. Supports level filter (All / DEBUG / INFO / WARNING / ERROR), Pause/Resume toggle, Refresh, and Clear display. Auto-scrolls to the newest line when already at the bottom; pauses scrolling gracefully when the user scrolls up. Closes cleanly and cancels the poll interval.
 - **Admin: Delete Deck** — a "Delete" button (destructive styling) appears in the Actions column of the deck table only when `whoami.is_admin === true`. Clicking it opens a confirmation `<dialog>` that shows the deck name + slide count and requires the user to type the exact deck name before the confirm button enables. On confirm, calls `DELETE /api/decks/{id}` with the standard `Authorization: Bearer` + `X-AIPPT-NTID` headers; on success, removes the row and shows a toast; on error, surfaces the server message inline. Non-admin sessions never see the button.
 - `window.isAdmin` flag (boolean, default `false`) populated by `GET /api/auth/whoami` after every sign-in state change. Used by both admin features to gate visibility without duplicating auth header construction. `applyAdminUiGates()` is the single function that shows/hides all admin-gated nav elements.
-
 - `GET /api/logs` — in-memory ring buffer (capacity 2000) of recent log records for in-browser triage on the SLAI platform, where `kubectl logs` is not exposed to deck authors. Bearer-gated, allowed in view-only mode, supports `limit` / `level` / `since` (cursor polling) / `logger_prefix` filters. The `AuthorizationScrubFilter` is attached directly to the handler so `Bearer <token>` strings are redacted before they land in the buffer (Python logger filters do not run for propagated records; only handler filters do). Re-installed in the FastAPI lifespan because `uvicorn.run` calls `logging.config.dictConfig` after `create_app` and replaces handlers on `uvicorn.access` / `uvicorn.error`.
 - `DELETE /api/decks/{id}` — bearer-gated deck removal for ops cleanup during testing. Rejected in view-only mode. Optional `?purge_images=false` keeps the rendered PNG directory; default purges it. Not yet surfaced in the UI.
 - `templates.yaml` is now baked into the container image so `GET /api/templates` no longer returns 503 on the platform.
@@ -28,6 +42,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- `GET /api/decks/{id}` includes a new `origin` block with derived
+  `kind` (`outline` | `script` | `upload`) and the source metadata.
 - `deploy/slai-app-prod/aippt/z-ingress.yaml` carries `nginx.ingress.kubernetes.io/proxy-body-size: 50m` so the platform ingress no longer rejects production decks (most enterprise templates are 2-15 MB) at the 1 MB nginx default.
 - `DELETE /api/decks/{id}` now requires `X-AIPPT-NTID` to be in `admin_ntids` (was Bearer-only). Non-admin callers get 403; the view-only deployment check still runs first.
 - `GET /api/logs` now requires admin (was Bearer-only). Still allowed in view-only mode because the endpoint has no mutating side effects.

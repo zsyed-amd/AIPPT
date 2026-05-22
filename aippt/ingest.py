@@ -30,6 +30,7 @@ def ingest_deck(
     progress_callback: Optional[callable] = None,
     source_script_path: Optional[str] = None,
     source_theme: Optional[str] = None,
+    outline_path: Optional[str] = None,
     ms_token: Optional[str] = None,
     ntid: Optional[str] = None,
 ) -> dict:
@@ -51,6 +52,7 @@ def ingest_deck(
         progress_callback: Optional ``fn(step: str, detail: str)`` called at each stage.
         source_script_path: Path to the generating script (JS/Python) for source tracking.
         source_theme: Theme name override (auto-detected from script if not provided).
+        outline_path: Path to the originating markdown outline (stable per-deck location).
 
     Returns:
         dict with keys: deck_id, deck_name, slide_count, images_dir,
@@ -125,6 +127,7 @@ def ingest_deck(
         source_script_path=source_script_path,
         source_engine=source_engine,
         source_theme=detected_theme,
+        outline_path=outline_path,
     )
     _progress("catalog_done", f"Cataloged as deck_id={deck_id}")
 
@@ -167,5 +170,5 @@ def ingest_deck(
         "images_dir": images_dir,
         "images_exported": images_exported,
         "tags_generated": tags_generated,
-        "source_tracked": source_script_path is not None,
+        "source_tracked": source_script_path is not None or outline_path is not None,
     }
