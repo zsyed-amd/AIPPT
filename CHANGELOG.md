@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `AGENTS.md` at repo root as the vendor-neutral entry point for AI
+  coding assistants (Claude Code, Cursor, OpenAI Codex, Aider, Goose,
+  Gemini CLI). Points at `CONTRIBUTING.md` for process and `CLAUDE.md`
+  for Claude-Code-specific guidance; restates the required PRD → branch
+  → TDD → CHANGELOG → Sphinx loop and the hard nos that apply to every
+  agent regardless of vendor.
 - `POST /api/decks/{deck_id}/regenerate` reruns the pipeline against the
   deck's recorded source (outline or script) and replaces the catalog
   entry in place. SSE progress stream matches `/api/decks/create`.
@@ -48,6 +54,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `DELETE /api/decks/{id}` now requires `X-AIPPT-NTID` to be in `admin_ntids` (was Bearer-only). Non-admin callers get 403; the view-only deployment check still runs first.
 - `GET /api/logs` now requires admin (was Bearer-only). Still allowed in view-only mode because the endpoint has no mutating side effects.
 - `signOut()` now also clears `localStorage.aippt_ntid` so the next sign-in re-prompts for an NTID.
+- `CONTRIBUTING.md` test-count references refreshed (406 → 1343) to match the
+  current fast pytest suite.
 
 ### Removed
 

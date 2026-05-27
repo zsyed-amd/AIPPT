@@ -13,7 +13,7 @@ python -m venv venv
 source venv/bin/activate          # WSL/Linux/macOS
 # venv/Scripts/activate           # Windows Git Bash / PowerShell
 pip install -r requirements.txt
-pytest tests/ -v                   # fast suite (~5s, 406 tests)
+pytest tests/ -v                   # fast suite (~5s, 1343 tests)
 ```
 
 If that passes, you are ready to work.
@@ -265,11 +265,11 @@ mocked, no API calls.
 
 ### Marker reference
 
-| Marker  | Count | What it does                                        |
-| ------- | ----: | --------------------------------------------------- |
-| default | 406   | Fully mocked, no network, runs in ~5s               |
-| `e2e`   | 24    | Real LLM calls. Requires `AMD_LLM_KEY`. Slow.       |
-| `live`  | 3     | Gateway connectivity checks. Requires creds.       |
+| Marker  | Count  | What it does                                       |
+| ------- | -----: | -------------------------------------------------- |
+| default | ~1343  | Fully mocked, no network, runs in ~5s              |
+| `e2e`   | ~24    | Real LLM calls. Requires `AMD_LLM_KEY`. Slow.      |
+| `live`  | ~3     | Gateway connectivity checks. Requires creds.       |
 
 ```bash
 pytest -m e2e               # run e2e suite
