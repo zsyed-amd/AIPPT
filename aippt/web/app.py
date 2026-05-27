@@ -113,6 +113,10 @@ def create_app(db_path: str = "slides.db", gateway_config: str = None, uploads_d
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+    themes_assets_dir = Path(__file__).parent.parent.parent / "themes" / "assets"
+    if themes_assets_dir.is_dir():
+        app.mount("/themes/assets", StaticFiles(directory=str(themes_assets_dir)), name="themes-assets")
+
     # Mount Sphinx docs at /docs when the build output exists
     docs_dir = Path(__file__).parent.parent.parent / "docs" / "_build" / "html"
     if docs_dir.is_dir():

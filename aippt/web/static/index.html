@@ -613,12 +613,69 @@
             background: var(--pico-del-color, #c0392b);
             color: white;
         }
+
+        /* ── Nav bar — Instinct treatment ───────────────────── */
+        body > nav {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-subtle);
+            position: relative;
+        }
+        body > nav::after {
+            content: "";
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            opacity: 0.4;
+        }
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            text-decoration: none;
+            color: var(--text-primary);
+        }
+        .nav-brand img {
+            height: 22px;
+            width: auto;
+            display: block;
+        }
+        .nav-brand-divider {
+            width: 1px;
+            height: 18px;
+            background: var(--border-subtle);
+            display: inline-block;
+        }
+        .nav-brand-name {
+            font-family: var(--font-heading);
+            font-size: 1rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            color: var(--text-primary);
+        }
+        nav a.nav-active {
+            color: var(--accent);
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 2px;
+        }
+        nav button.nav-tags-btn {
+            padding: 0.3rem 0.7rem;
+            font-size: 0.85rem;
+        }
     </style>
 </head>
 <body>
     <nav class="container">
         <ul>
-            <li><h1>AIPPT</h1></li>
+            <li>
+                <span class="nav-brand">
+                    <img id="nav-wordmark" src="themes/assets/amd-wordmark.png" alt="AMD">
+                    <span class="nav-brand-divider"></span>
+                    <span class="nav-brand-name">AIPPT</span>
+                </span>
+            </li>
             <li><span id="view-only-badge" style="display:none; background:var(--pico-primary-background); color:var(--pico-primary-inverse); padding:0.15rem 0.5rem; border-radius:1rem; font-size:0.75rem; font-weight:600;">Library Mode</span></li>
         </ul>
         <ul>
@@ -626,9 +683,9 @@
                 <span class="ntid-badge">&#x1F464; <span id="ntid-badge-text"></span></span>
             </li>
             <li><button class="nav-tags-btn outline" id="tags-toggle-btn" onclick="toggleTagSidebar()">Tags</button></li>
-            <li><a href="#" onclick="showDecks(); return false;">Decks</a></li>
-            <li><a href="#" onclick="showSearch(); return false;">Search</a></li>
-            <li><a href="#" onclick="showSettings(); return false;">Settings</a></li>
+            <li><a id="nav-decks" href="#" onclick="showDecks(); return false;">Decks</a></li>
+            <li><a id="nav-search" href="#" onclick="showSearch(); return false;">Search</a></li>
+            <li><a id="nav-settings" href="#" onclick="showSettings(); return false;">Settings</a></li>
             <li><a href="docs/index.html" target="_blank">Docs</a></li>
             <li><a href="api/export" target="_blank" role="button" class="outline">Export CSV</a></li>
             <li id="ms-signin-nav-item" style="display:none;">
@@ -1294,7 +1351,14 @@
             }
         }
 
+        function setNavActive(id) {
+            ['nav-decks', 'nav-search', 'nav-settings'].forEach(function(navId) {
+                document.getElementById(navId).classList.toggle('nav-active', navId === id);
+            });
+        }
+
         async function showDecks() {
+            setNavActive('nav-decks');
             hide('slide-browser');
             hide('search-view');
             hide('settings-view');
@@ -1346,6 +1410,7 @@
         }
 
         async function showSearch() {
+            setNavActive('nav-search');
             hide('deck-list');
             hide('slide-browser');
             hide('settings-view');
@@ -1533,6 +1598,7 @@
         let availableModels = [];
 
         async function showSettings() {
+            setNavActive('nav-settings');
             hide('deck-list');
             hide('slide-browser');
             hide('search-view');
