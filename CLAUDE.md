@@ -355,33 +355,33 @@ The `pptx` skill (from `anthropic-agent-skills/document-skills`) provides optimi
 
 ## Project Tracking
 
-This project uses an **Obsidian vault** for planning, PRD tracking, and daily logs — not GitHub Issues or Planner.
+PRDs live in the shared **`swproductmgmt`** repo at `~/git/swproductmgmt/projects/aippt/prds/` — the single source of truth, where collaboration + review happen (house rule: branch → PR → reviewed and merged by someone else). This project additionally uses an **Obsidian vault** for the PRD status **dashboard** and daily logs — not GitHub Issues or Planner.
 
 **Vault root:** `/mnt/c/Users/melliott/git/obsidian-vault/`
 
 | Resource | Path |
 |----------|------|
 | Daily work log | `10 - Daily/YYYY-MM-DD.md` — add a `## 🛠️ Work Log` section with AIPPT subsection |
-| PRD tracker | `30 - Projects/AIPPT/AIPPT PRD Tracker.md` |
-| PRD files | `30 - Projects/AIPPT/PRDs/` |
+| PRD content (canonical) | `~/git/swproductmgmt/projects/aippt/prds/` — shared repo, single source of truth |
+| PRD status dashboard | `30 - Projects/AIPPT/AIPPT PRD Tracker.md` (Obsidian) |
 | Dev notes | `30 - Projects/AIPPT/AIPPT Dev Notes.md` |
 | Feedback | `30 - Projects/AIPPT/AIPPT Feedback.md` |
 
 **After completing meaningful work** (feature implemented, PRD finished, branch merged):
 1. Add an entry to today's daily log under `## 🛠️ Work Log`
-2. Update `AIPPT PRD Tracker.md` — move PRD to In Progress / Completed as appropriate
-3. Update the relevant PRD file's frontmatter `status` field (`draft` → `in-review` → `implemented`)
+2. Update `AIPPT PRD Tracker.md` — move the PRD to In Progress / Completed as appropriate
+3. Update the PRD's frontmatter `status` in `~/git/swproductmgmt/projects/aippt/prds/` via a PR (`draft` → `in-review` → `implemented`); on `implemented`, move it to `~/git/swproductmgmt/projects/aippt/prds/implemented/`
 
-## Local Planning Docs
+## Planning Docs
 
-`.local-docs/` is gitignored — it holds session-specific planning files that mirror the vault.
+PRDs are authored and stored in the shared **`swproductmgmt`** repo at `~/git/swproductmgmt/projects/aippt/prds/` — see `CONTRIBUTING.md` §4 for the publish/review flow.
 
 | Path | Purpose |
 |------|---------|
-| `.local-docs/plans/` | Active PRD and implementation plans |
-| `.local-docs/plans/implemented/` | Completed PRDs (archive) |
+| `~/git/swproductmgmt/projects/aippt/prds/` | Active PRDs (shared source of truth) |
+| `~/git/swproductmgmt/projects/aippt/prds/implemented/` | Completed PRDs (archive) |
 
-When completing a PRD: move its `.local-docs/` copy to `plans/implemented/` **and** update the vault tracker + PRD frontmatter.
+> **Retired (2026-06):** the gitignored `.local-docs/plans/` tree is no longer the PRD home — PRDs are moving to `~/git/swproductmgmt/projects/aippt/prds/` (migration in progress). When completing a PRD: move it to `~/git/swproductmgmt/projects/aippt/prds/implemented/` via PR **and** update the vault tracker.
 
 ## Worktree-Based Development
 
@@ -406,7 +406,7 @@ git branch -d feature/<branch-name>
 
 - **Feature work**: Branch from `main`, use `feature/<descriptive-name>`
 - **Worktrees**: Go in `.worktrees/<short-name>/` (gitignored)
-- **PRDs**: Tracked in `30 - Projects/AIPPT/AIPPT PRD Tracker.md` in the Obsidian vault (see Project Tracking section above). The vault tracker is the authoritative source — not this file.
+- **PRDs**: Authored in `~/git/swproductmgmt/projects/aippt/prds/` (canonical content). Status is tracked in the `AIPPT PRD Tracker` note in the Obsidian vault — the tracker is your dashboard; swproductmgmt is the source of truth for PRD content.
 - **Cleanup**: Remove worktrees and delete branches after merging
 
 ### Current Active Branches
