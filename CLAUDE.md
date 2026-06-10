@@ -381,7 +381,7 @@ PRDs are authored and stored in the shared **`swproductmgmt`** repo at `~/git/sw
 | `~/git/swproductmgmt/projects/aippt/prds/` | Active PRDs (shared source of truth) |
 | `~/git/swproductmgmt/projects/aippt/prds/implemented/` | Completed PRDs (archive) |
 
-> **Retired (2026-06):** the gitignored `.local-docs/plans/` tree is no longer the PRD home — PRDs are moving to `~/git/swproductmgmt/projects/aippt/prds/` (migration in progress). When completing a PRD: move it to `~/git/swproductmgmt/projects/aippt/prds/implemented/` via PR **and** update the vault tracker.
+> **Retired (2026-06):** the gitignored `.local-docs/plans/` tree has been removed — PRDs now live in `~/git/swproductmgmt/projects/aippt/prds/` (migration complete). When completing a PRD: move it to `~/git/swproductmgmt/projects/aippt/prds/implemented/` via PR **and** update the vault tracker.
 
 ## Worktree-Based Development
 

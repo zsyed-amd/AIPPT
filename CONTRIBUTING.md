@@ -111,8 +111,9 @@ captured in a PRD before implementation begins.
 > `.local-docs/plans/` tree and were mirrored into the Obsidian vault at
 > `30 - Projects/AIPPT/PRDs/`. Both are being retired in favor of the single
 > `~/git/swproductmgmt/projects/aippt/prds/` home; the vault keeps only the tracker
-> dashboard. File migration is in progress — until it completes, some PRDs may
-> still be found only in `.local-docs/plans/`.
+> dashboard. **Migration complete (2026-06):** `.local-docs/plans/` and the
+> vault `PRDs/` copies have been removed; all PRDs now live in
+> `~/git/swproductmgmt/projects/aippt/prds/`.
 
 ### PRD lifecycle
 
