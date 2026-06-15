@@ -18,9 +18,12 @@ RUN cat /etc/ssl/certs/ca-certificates.crt \
 
 WORKDIR /app
 
-# Install dependencies
+# Install dependencies. On AMD-network build hosts, egress to pypi is
+# TLS-intercepted by the AMD Corporate Root CA; pip verifies against its own
+# bundled certifi store (not the system trust), so point it at the combined
+# bundle baked above (public roots + AMD Corporate Root + issuing CA).
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN PIP_CERT=/etc/ssl/certs/ca-bundle-with-amd.pem pip install --no-cache-dir -r requirements.txt
 
 # Copy application code (world-readable; ownership enforced by K8s securityContext)
 COPY aippt/ aippt/
