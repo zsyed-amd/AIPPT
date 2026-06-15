@@ -37,7 +37,7 @@ def detect_view_only(gateway_config: str) -> bool:
     return True
 
 
-def create_app(db_path: str = "slides.db", gateway_config: str = None, uploads_dir: str = "uploads", images_dir: str = "images", project_root: str = None, view_only: bool = None, max_upload_mb: int = None, storage_backend: str = None) -> FastAPI:
+def create_app(db_path: str = "slides.db", gateway_config: str = None, uploads_dir: str = "uploads", images_dir: str = "images", project_root: str = None, view_only: bool = None, max_upload_mb: int = None, storage_backend: str = None, data_dir: str = None) -> FastAPI:
     """Create and configure the FastAPI application.
 
     Args:
@@ -56,10 +56,15 @@ def create_app(db_path: str = "slides.db", gateway_config: str = None, uploads_d
             ``DEFAULT_MAX_UPLOAD_MB`` when neither is set.
         storage_backend: ``"fs"`` (default) or ``"s3"``. Overrides the
             ``AIPPT_STORAGE`` env var. The filesystem backend is rooted at
-            ``project_root`` and preserves historical local behavior; the s3
+            ``data_dir`` and preserves historical local behavior; the s3
             backend reads MinIO coordinates from the environment and, on
             startup, restores the catalog snapshot and installs the debounced
             snapshot scheduler.
+        data_dir: Root that storage keys are relative to (the durable data
+            volume, e.g. ``/app/data``). Object-storage keys are computed as
+            the path of each asset relative to this root, so they match the
+            ``uploads/…``/``images/…``/``output/…`` layout regardless of where
+            the working directory sits. Defaults to ``project_root``.
 
     Returns:
         Configured FastAPI app
@@ -74,8 +79,9 @@ def create_app(db_path: str = "slides.db", gateway_config: str = None, uploads_d
     log_buffer = install_ring_buffer()
 
     resolved_root = project_root or os.getcwd()
+    data_root = os.path.abspath(data_dir or os.environ.get("AIPPT_DATA_DIR") or resolved_root)
     storage_config = load_storage_config(storage_backend)
-    storage = build_storage(storage_config, fs_root=resolved_root)
+    storage = build_storage(storage_config, fs_root=data_root)
 
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
@@ -118,6 +124,7 @@ def create_app(db_path: str = "slides.db", gateway_config: str = None, uploads_d
     app.state.uploads_dir = uploads_dir
     app.state.images_dir = images_dir
     app.state.project_root = resolved_root
+    app.state.data_root = data_root
     app.state.storage = storage
     app.state.storage_config = storage_config
     if view_only is None:

@@ -476,10 +476,73 @@ def cmd_serve(args):
     view_only = True if getattr(args, 'view_only', False) else None
     max_upload_mb = getattr(args, 'max_upload_mb', None)
     storage_backend = getattr(args, 'storage', None)
-    app = create_app(db_path=db_path, gateway_config=gateway_config, uploads_dir=uploads_dir, images_dir=images_dir, project_root=base, view_only=view_only, max_upload_mb=max_upload_mb, storage_backend=storage_backend)
+    data_dir = getattr(args, 'data_dir', None)
+    app = create_app(db_path=db_path, gateway_config=gateway_config, uploads_dir=uploads_dir, images_dir=images_dir, project_root=base, view_only=view_only, max_upload_mb=max_upload_mb, storage_backend=storage_backend, data_dir=data_dir)
     mode = "view-only" if app.state.view_only else "full"
     print(f"Starting AIPPT web UI on http://{args.host}:{args.port} ({mode} mode)")
     uvicorn.run(app, host=args.host, port=args.port)
+    return 0
+
+
+def cmd_storage(args):
+    """Object-storage maintenance commands (currently: backfill)."""
+    from aippt.config import load_storage_config, load_dirs_config, resolve_path
+    from aippt.storage import build_storage
+    from aippt.catalog import snapshot_db, CATALOG_SNAPSHOT_KEY
+
+    action = getattr(args, "storage_action", None)
+    if action != "backfill":
+        print("usage: aippt storage backfill [--data-dir DIR] [--db PATH] "
+              "[--storage s3] [--dry-run]")
+        return 1
+
+    dirs = load_dirs_config()
+    base = dirs["base_dir"]
+    d = dirs["directories"]
+    data_dir = os.path.abspath(getattr(args, "data_dir", None) or base)
+    db_path = args.db if args.db != "slides.db" else resolve_path(d["db"], base)
+
+    cfg = load_storage_config(getattr(args, "storage", None))
+    if cfg.backend != "s3":
+        print("storage backfill requires an object-storage backend; "
+              "pass --storage s3 (and set MINIO_* env) or AIPPT_STORAGE=s3.")
+        return 2
+
+    dry = getattr(args, "dry_run", False)
+    storage = None if dry else build_storage(cfg, fs_root=data_dir)
+
+    total = 0
+    uploaded = 0
+    for sub in ("uploads", "images", "output"):
+        root = os.path.join(data_dir, sub)
+        if not os.path.isdir(root):
+            continue
+        for dirpath, _subdirs, files in os.walk(root):
+            for name in files:
+                local = os.path.join(dirpath, name)
+                key = os.path.relpath(local, data_dir).replace(os.sep, "/")
+                total += 1
+                if dry:
+                    print(f"[dry-run] would upload {key}")
+                    continue
+                with open(local, "rb") as fh:
+                    storage.put(key, fh)
+                uploaded += 1
+                if uploaded % 50 == 0:
+                    print(f"  uploaded {uploaded} files...")
+
+    if os.path.exists(db_path):
+        if dry:
+            print(f"[dry-run] would snapshot {db_path} -> {CATALOG_SNAPSHOT_KEY}")
+        else:
+            snapshot_db(db_path, storage, CATALOG_SNAPSHOT_KEY)
+            print(f"Catalog snapshot uploaded -> {CATALOG_SNAPSHOT_KEY}")
+    else:
+        print(f"No catalog DB at {db_path}; skipping snapshot.")
+
+    verb = "would be uploaded" if dry else "uploaded"
+    print(f"Backfill {'(dry-run) ' if dry else ''}complete: "
+          f"{total} blob file(s) {verb} under {cfg.bucket}/{cfg.prefix}.")
     return 0
 
 
@@ -1624,6 +1687,16 @@ def build_parser():
     p_serve.add_argument("--view-only", action="store_true", help="Disable LLM features (also settable via AIPPT_VIEW_ONLY env var; auto-detected when no gateway/API keys)")
     p_serve.add_argument("--max-upload-mb", type=int, default=None, help="Maximum upload size in MB. Overrides upload.max_size_mb in gateway.yaml; default 50.")
     p_serve.add_argument("--storage", choices=["fs", "s3"], default=None, help="Storage backend for library assets and the catalog snapshot. 'fs' (default) uses the local data dir; 's3' uses S3-compatible object storage (MinIO) configured via MINIO_* env vars. Overrides the AIPPT_STORAGE env var.")
+    p_serve.add_argument("--data-dir", default=None, help="Durable data root that object-storage keys are computed relative to (e.g. /app/data). Defaults to the dirs.yaml base directory. Set this to the data volume in container deployments so keys match the uploads/images/output layout.")
+
+    # storage (object-storage maintenance)
+    p_storage = sub.add_parser("storage", help="Object-storage maintenance (backfill)")
+    storage_sub = p_storage.add_subparsers(dest="storage_action")
+    p_backfill = storage_sub.add_parser("backfill", help="One-time upload of local uploads/images/output + catalog snapshot to object storage")
+    p_backfill.add_argument("--data-dir", default=None, help="Local data root to back up (default: dirs.yaml base dir)")
+    p_backfill.add_argument("--db", default="slides.db", help="Catalog DB to snapshot (default: dirs.yaml db path)")
+    p_backfill.add_argument("--storage", choices=["fs", "s3"], default=None, help="Target backend; must resolve to s3 (overrides AIPPT_STORAGE)")
+    p_backfill.add_argument("--dry-run", action="store_true", help="List what would be uploaded without uploading")
 
     # tags (taxonomy management)
     p_tags = sub.add_parser("tags", help="Manage taxonomy of predefined tags")
@@ -1852,6 +1925,7 @@ def main():
         "analyze": cmd_analyze,
         "export": cmd_export,
         "serve": cmd_serve,
+        "storage": cmd_storage,
         "tags": cmd_tags,
         "tag": cmd_tag,
         "untag": cmd_untag,
