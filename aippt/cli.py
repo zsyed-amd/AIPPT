@@ -475,7 +475,8 @@ def cmd_serve(args):
     db_path = args.db if args.db != "slides.db" else resolve_path(d["db"], base)
     view_only = True if getattr(args, 'view_only', False) else None
     max_upload_mb = getattr(args, 'max_upload_mb', None)
-    app = create_app(db_path=db_path, gateway_config=gateway_config, uploads_dir=uploads_dir, images_dir=images_dir, project_root=base, view_only=view_only, max_upload_mb=max_upload_mb)
+    storage_backend = getattr(args, 'storage', None)
+    app = create_app(db_path=db_path, gateway_config=gateway_config, uploads_dir=uploads_dir, images_dir=images_dir, project_root=base, view_only=view_only, max_upload_mb=max_upload_mb, storage_backend=storage_backend)
     mode = "view-only" if app.state.view_only else "full"
     print(f"Starting AIPPT web UI on http://{args.host}:{args.port} ({mode} mode)")
     uvicorn.run(app, host=args.host, port=args.port)
@@ -1622,6 +1623,7 @@ def build_parser():
     p_serve.add_argument("--images-dir", default=None, help="Parent directory for rendered slide images (default: dirs.yaml or 'images'). Set this to a persistent volume in container deployments — otherwise PNGs land in cwd and are lost on pod restart.")
     p_serve.add_argument("--view-only", action="store_true", help="Disable LLM features (also settable via AIPPT_VIEW_ONLY env var; auto-detected when no gateway/API keys)")
     p_serve.add_argument("--max-upload-mb", type=int, default=None, help="Maximum upload size in MB. Overrides upload.max_size_mb in gateway.yaml; default 50.")
+    p_serve.add_argument("--storage", choices=["fs", "s3"], default=None, help="Storage backend for library assets and the catalog snapshot. 'fs' (default) uses the local data dir; 's3' uses S3-compatible object storage (MinIO) configured via MINIO_* env vars. Overrides the AIPPT_STORAGE env var.")
 
     # tags (taxonomy management)
     p_tags = sub.add_parser("tags", help="Manage taxonomy of predefined tags")
