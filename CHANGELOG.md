@@ -8,6 +8,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Object-storage persistence backend (phase 2: read-through/write-through
+  wiring + deployable image).** In `s3` mode the pod's `/app/data` volume
+  becomes an ephemeral cache and MinIO is the source of truth. New
+  `aippt/web/asset_sync.py` (`persist_file`/`persist_tree`/`materialize_file`)
+  uploads decks, slide images, sources, and outputs after they are written and
+  fetches them back on a cold pod before serving; all functions are no-ops in
+  `fs` mode, so local behavior is unchanged. Wired into upload, create,
+  regenerate, write-notes, `download_deck`, `serve_slide_image`, and
+  `_get_slide_image_path`.
+- `AIPPT_DATA_DIR` / `serve --data-dir` defines the durable data root that
+  object-storage keys are computed relative to (e.g. `/app/data`), so keys
+  match the `uploads/…` / `images/<deck>/…` / `output/…` layout regardless of
+  the working directory. Exposed as `app.state.data_root`.
+- `aippt storage backfill` — one-time upload of local `uploads/`/`images/`/
+  `output/` plus a catalog snapshot to object storage (`--dry-run` to preview).
+- Deployment wired for object storage: `deployment.yaml` sets `AIPPT_STORAGE=s3`
+  + `MINIO_*` (keys via `secretKeyRef: aippt-secrets`); the Dockerfile bakes the
+  AMD Corporate Root CA + issuing CA (`deploy/ca/amd-root-ca.pem`) into
+  `/etc/ssl/certs/ca-bundle-with-amd.pem` and passes `--data-dir /app/data`, so
+  minio-py verifies the s3minio cert under `readOnlyRootFilesystem`. Cutover and
+  rollback steps in `deploy/slai-app-prod/aippt/OBJECT-STORAGE.md`.
 - **Object-storage persistence backend (phase 1: abstraction + catalog
   snapshot/restore).** New `aippt/storage.py` defines a `Storage` protocol with
   two backends: `FsStorage` (local filesystem, the default, byte-for-byte
@@ -83,6 +104,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `aippt.py` legacy-syntax wrapper now recognizes the `storage` and
+  `merge-template` subcommands. They were missing from the wrapper's
+  hardcoded subcommand set, so `aippt storage …` / `aippt merge-template …`
+  were misrouted into the legacy `create` positional path.
 - Linux Graph render path: `aippt/render.py` now renames `pdftoppm`'s `slide-NN.png` output to the `Slide{i}.png` pattern that `catalog_deck` globs for, so `/api/decks/{id}/slides` returns populated `image_path` values and the UI thumbnail grid renders. Previously every slide had `image_path: null` even when the upload reported `images_exported: true`.
 - `app.py` startup hook migrated from the deprecated `@app.on_event("startup")` to an `asynccontextmanager` lifespan.
 

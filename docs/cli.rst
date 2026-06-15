@@ -355,6 +355,11 @@ Options:
   reads ``upload.max_size_mb`` from ``gateway.yaml`` otherwise). The
   middleware rejects oversized POSTs to ``/api/decks/upload*`` with HTTP
   413 before the route handler runs.
+- ``--storage {fs,s3}`` -- Storage backend for library assets and the catalog
+  snapshot (default ``fs``; also settable via ``AIPPT_STORAGE``). See
+  :doc:`configuration` for the ``MINIO_*`` env vars used by ``s3``.
+- ``--data-dir DIR`` -- Durable data root that object-storage keys are computed
+  relative to (default: ``dirs.yaml`` base; also ``AIPPT_DATA_DIR``).
 
 Examples::
 
@@ -363,6 +368,33 @@ Examples::
     python aippt.py serve --view-only
     python aippt.py serve --host 0.0.0.0 --port 8000 --images-dir /app/data/images
     python aippt.py serve --max-upload-mb 100
+
+storage
+-------
+
+Object-storage maintenance commands.
+
+.. code-block:: text
+
+   aippt.py storage backfill [options]
+
+The ``backfill`` action performs a one-time upload of the local
+``uploads/``, ``images/``, and ``output/`` trees plus a catalog snapshot
+(``catalog/slides.db``) to object storage. Used to seed MinIO from an existing
+local data directory during cutover. Requires an object-storage backend
+(``--storage s3`` or ``AIPPT_STORAGE=s3`` with the ``MINIO_*`` env set).
+
+Options:
+
+- ``--data-dir DIR`` -- Local data root to back up (default: ``dirs.yaml`` base)
+- ``--db PATH`` -- Catalog DB to snapshot (default: ``dirs.yaml`` db path)
+- ``--storage {fs,s3}`` -- Target backend; must resolve to ``s3``
+- ``--dry-run`` -- List what would be uploaded without uploading
+
+Examples::
+
+    python aippt.py storage backfill --data-dir /app/data --dry-run
+    python aippt.py storage backfill --data-dir /app/data
 
 models
 ------
