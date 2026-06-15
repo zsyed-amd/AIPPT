@@ -65,11 +65,43 @@ spec:
               value: /app/data
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
+            # --- Object storage (MinIO) durable backend ---
+            # /app/data is now an ephemeral read-through/write-through cache;
+            # MinIO under ogmatic-zoo/asic/aippt/ is the source of truth. The
+            # catalog is restored from catalog/slides.db on startup and
+            # snapshotted (debounced) on write. See PRD 2026-06-10.
+            - name: AIPPT_STORAGE
+              value: "s3"
+            - name: MINIO_ENDPOINT
+              value: "s3minio.amd.com:21000"
+            - name: MINIO_BUCKET
+              value: "ogmatic-zoo"
+            - name: MINIO_PREFIX
+              value: "asic/aippt/"
+            # CA bundle baked by the Dockerfile (public AMD root + issuing CA
+            # appended to the system store) so TLS verifies under
+            # readOnlyRootFilesystem.
+            - name: MINIO_CA_BUNDLE
+              value: "/etc/ssl/certs/ca-bundle-with-amd.pem"
             - name: AMD_LLM_KEY
               valueFrom:
                 secretKeyRef:
                   name: aippt-secrets
                   key: AMD_LLM_KEY
+            # Add MINIO_ACCESS_KEY / MINIO_SECRET_KEY to the aippt-secrets
+            # Secret (see deploy/slai-app-prod/aippt/secrets.enc.yaml) before
+            # rolling this out. Mint the key in the MinIO console scoped to
+            # asic/; rotate by updating the sealed secret and restarting.
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aippt-secrets
+                  key: MINIO_ACCESS_KEY
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aippt-secrets
+                  key: MINIO_SECRET_KEY
           volumeMounts:
             - name: data
               mountPath: /app/data

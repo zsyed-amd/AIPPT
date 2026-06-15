@@ -2,9 +2,19 @@ FROM python:3.11-slim
 
 # pdftoppm (from poppler-utils) is required by the SharePoint render pipeline:
 # PPTX -> Graph -> PDF -> pdftoppm -> PNGs. See aippt/render.py.
+# ca-certificates provides the base trust store we extend with the AMD root.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         poppler-utils \
+        ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Bake the AMD Corporate PKI chain into a combined CA bundle so minio-py can
+# verify the s3minio.amd.com cert under readOnlyRootFilesystem. The manifest
+# points MINIO_CA_BUNDLE at this file. These are public CA certs, not secrets.
+COPY deploy/ca/amd-root-ca.pem /usr/local/share/ca-certificates-extra/amd-root-ca.pem
+RUN cat /etc/ssl/certs/ca-certificates.crt \
+        /usr/local/share/ca-certificates-extra/amd-root-ca.pem \
+        > /etc/ssl/certs/ca-bundle-with-amd.pem
 
 WORKDIR /app
 
@@ -27,4 +37,4 @@ RUN mkdir -p /app/data/uploads /app/data/images /app/data/backups && \
 
 EXPOSE 8000
 
-ENTRYPOINT ["python", "aippt.py", "serve", "--host", "0.0.0.0", "--port", "8000", "--db", "/app/data/slides.db", "--uploads-dir", "/app/data/uploads", "--images-dir", "/app/data/images"]
+ENTRYPOINT ["python", "aippt.py", "serve", "--host", "0.0.0.0", "--port", "8000", "--db", "/app/data/slides.db", "--uploads-dir", "/app/data/uploads", "--images-dir", "/app/data/images", "--data-dir", "/app/data"]
