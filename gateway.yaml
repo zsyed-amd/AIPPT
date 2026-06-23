@@ -16,3 +16,10 @@ sharepoint:
   render_site_id: "amdcloud.sharepoint.com,8018d316-7485-4324-8c34-7b21e99987a6,a3fda584-cb3a-4af7-b72d-9c2650ca29fd"
   render_drive_id: "b!FtMYgIV0JEOMNHsh6ZmHpoSl_aM6y_dKty2cJlDKKf2QUWH55IV8SodoYM9Iup0F"
   render_root_path: "AIPPT/render-staging"
+
+# Admin-tier v1 allowlist (PRD 2026-05-20-admin-tier-via-ad-groups). NTIDs here,
+# combined with a valid Microsoft Bearer token, may call admin-gated endpoints
+# (/api/logs, delete-deck, write-notes). Empty/absent = no admins (prod was
+# shipped this way, leaving /api/logs 403 for everyone — fixed 2026-06-23).
+admin_ntids:
+  - melliott
