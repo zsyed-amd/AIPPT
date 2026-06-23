@@ -38,6 +38,7 @@ from aippt.catalog import (
 from aippt.export import export_csv
 from aippt import graph
 from aippt.ingest import ingest_deck
+from aippt.web.asset_sync import persist_file, persist_tree, materialize_file
 import aippt.pipeline as _pipeline_module
 from aippt.pipeline import PipelineConfig
 from aippt.config import get_template_default, TemplateConfigError
@@ -233,12 +234,13 @@ async def regenerate_deck(deck_id: int, request: Request):
             status_code=409,
         )
 
-    # Resolve the source path: stable per-deck location first, then fallback
+    # Resolve the source path: stable per-deck location first, then fallback.
+    # materialize_file fetches from object storage on a cold pod (no-op in fs).
     source_path = None
     stable_outline = os.path.join(_sources_dir(uploads_dir, deck_id), "outline.md")
-    if os.path.exists(stable_outline):
+    if materialize_file(request.app.state, stable_outline):
         source_path = stable_outline
-    elif origin.get("outline_path") and os.path.exists(origin["outline_path"]):
+    elif origin.get("outline_path") and materialize_file(request.app.state, origin["outline_path"]):
         source_path = origin["outline_path"]
 
     if source_path is None:
@@ -318,6 +320,8 @@ async def regenerate_deck(deck_id: int, request: Request):
                 source_theme=theme,
             )
             pipeline_result = _pipeline_module.run_pipeline(pipeline_config)
+            # The regenerated deck overwrites the existing file in place.
+            persist_file(request.app.state, output_path)
 
             event_q.put(("progress", {"step": "ingest", "status": "running", "detail": "Re-cataloging generated deck..."}))
 
@@ -379,6 +383,9 @@ async def regenerate_deck(deck_id: int, request: Request):
                 _conn.commit()
             finally:
                 _conn.close()
+
+            # Push any re-rendered slide images to durable storage.
+            persist_tree(request.app.state, _per_deck_images_dir(request, output_path))
 
             return {
                 "deck_id": deck_id,
@@ -767,8 +774,12 @@ def _resolve_db_path(path: str, project_root: str) -> str:
     return os.path.normpath(os.path.join(project_root, path))
 
 
-def _get_slide_image_path(slide_id: int, db_path: str, project_root: str = None):
-    """Return the image path for a slide, or None if not found."""
+def _get_slide_image_path(slide_id: int, db_path: str, project_root: str = None, state=None):
+    """Return the image path for a slide, or None if not found.
+
+    In object-storage mode, fetches the PNG from storage into the local cache
+    first (cold-pod read-through) when *state* is provided.
+    """
     conn = get_db(db_path)
     row = conn.execute(
         "SELECT image_path FROM slides WHERE id = ?", (slide_id,)
@@ -777,6 +788,8 @@ def _get_slide_image_path(slide_id: int, db_path: str, project_root: str = None)
     if not row or not row["image_path"]:
         return None
     path = _resolve_db_path(row["image_path"], project_root or os.getcwd())
+    if state is not None and materialize_file(state, path):
+        return path
     return path if os.path.exists(path) else None
 
 
@@ -797,7 +810,7 @@ async def analyze_slide_endpoint(slide_id: int, request: Request):
     except Exception:
         pass
 
-    image_path = _get_slide_image_path(slide_id, db_path, request.app.state.project_root)
+    image_path = _get_slide_image_path(slide_id, db_path, request.app.state.project_root, state=request.app.state)
     if not image_path:
         return JSONResponse({"error": "No image available for this slide"}, status_code=404)
 
@@ -835,7 +848,7 @@ async def suggest_notes_endpoint(slide_id: int, request: Request):
     except Exception:
         pass
 
-    image_path = _get_slide_image_path(slide_id, db_path, request.app.state.project_root)
+    image_path = _get_slide_image_path(slide_id, db_path, request.app.state.project_root, state=request.app.state)
     if not image_path:
         return JSONResponse({"error": "No image available for this slide"}, status_code=404)
 
@@ -920,7 +933,7 @@ async def write_notes_to_deck_endpoint(deck_id: int, request: Request):
     file_path = deck.get("file_path", "")
     if file_path:
         file_path = _resolve_db_path(file_path, project_root)
-    if not file_path or not os.path.exists(file_path):
+    if not file_path or not materialize_file(request.app.state, file_path):
         return JSONResponse({"error": "Source file not found"}, status_code=404)
 
     try:
@@ -934,6 +947,9 @@ async def write_notes_to_deck_endpoint(deck_id: int, request: Request):
         )
     except ValueError as exc:
         return JSONResponse({"error": str(exc)}, status_code=409)
+
+    # The original deck was modified in place; push the new version to storage.
+    persist_file(request.app.state, file_path)
 
     return {
         "status": "ok",
@@ -959,7 +975,7 @@ async def improvements_endpoint(slide_id: int, request: Request):
     except Exception:
         pass
 
-    image_path = _get_slide_image_path(slide_id, db_path, request.app.state.project_root)
+    image_path = _get_slide_image_path(slide_id, db_path, request.app.state.project_root, state=request.app.state)
     if not image_path:
         return JSONResponse({"error": "No image available for this slide"}, status_code=404)
 
@@ -1013,7 +1029,7 @@ async def serve_slide_image(slide_id: int, request: Request):
         return HTMLResponse("No image", status_code=404)
 
     image_path = _resolve_db_path(row["image_path"], project_root)
-    if os.path.exists(image_path):
+    if materialize_file(request.app.state, image_path):
         return FileResponse(
             image_path,
             headers={"Cache-Control": "no-cache"},
@@ -1431,13 +1447,15 @@ async def upload_deck(
         )
     with open(dest_path, 'wb') as fh:
         fh.write(content)
+    persist_file(request.app.state, dest_path)
 
     # Run ingest pipeline: export images → catalog → optional tags
+    per_deck_images = _per_deck_images_dir(request, dest_path)
     try:
         result = ingest_deck(
             deck_path=dest_path,
             db_path=db_path,
-            images_dir=_per_deck_images_dir(request, dest_path),
+            images_dir=per_deck_images,
             generate_tags=generate_tags,
             gateway_config=gateway_config,
             require_images=_require_images_for_render(),
@@ -1458,6 +1476,9 @@ async def upload_deck(
         )
     except Exception as exc:
         return JSONResponse({'error': f'Failed to ingest deck: {exc}'}, status_code=500)
+
+    # Push rendered slide images to durable storage (no-op in fs mode).
+    persist_tree(request.app.state, per_deck_images)
 
     # Build descriptive message
     parts = [f"Deck '{result['deck_name']}' uploaded"]
@@ -1634,11 +1655,15 @@ async def create_deck_stream(
                 "slide_count": pipeline_result.slide_count,
                 "title": pipeline_result.title,
             }
+            # Persist the generated deck + originating outline to durable storage.
+            persist_file(request.app.state, output_path)
+            persist_file(request.app.state, outline_save_path)
             event_q.put(("progress", {"step": "ingest", "status": "running", "detail": "Cataloging generated deck..."}))
+            per_deck_images = _per_deck_images_dir(request, output_path)
             ingest_result = ingest_deck(
                 deck_path=output_path,
                 db_path=db_path,
-                images_dir=_per_deck_images_dir(request, output_path),
+                images_dir=per_deck_images,
                 gateway_config=gateway_config,
                 require_images=_require_images_for_render(),
                 progress_callback=ingest_progress,
@@ -1646,6 +1671,7 @@ async def create_deck_stream(
                 ntid=ntid,
                 # outline_path will be set below after we know deck_id
             )
+            persist_tree(request.app.state, per_deck_images)
             # Copy outline to stable per-deck source location
             deck_id = ingest_result["deck_id"]
             try:
@@ -1653,6 +1679,7 @@ async def create_deck_stream(
                 stable_dir = _sources_dir(uploads_dir, deck_id)
                 stable_outline = os.path.join(stable_dir, "outline.md")
                 _shutil.copy2(outline_save_path, stable_outline)
+                persist_file(request.app.state, stable_outline)
                 # Update the deck row with the stable outline path
                 _conn = get_db(db_path)
                 _conn.execute(
@@ -1888,7 +1915,7 @@ async def download_deck(deck_id: int, request: Request):
     file_path = deck.get('file_path', '')
     if file_path:
         file_path = _resolve_db_path(file_path, project_root)
-    if not file_path or not os.path.exists(file_path):
+    if not file_path or not materialize_file(request.app.state, file_path):
         return JSONResponse({'error': 'Source file not found'}, status_code=404)
 
     # Create temp copy with DB notes applied

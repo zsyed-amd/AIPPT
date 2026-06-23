@@ -300,3 +300,49 @@ View-Only Mode
 
 When neither a gateway config nor direct API keys are detected, the web UI
 automatically enters view-only mode.
+
+Storage Backend
+^^^^^^^^^^^^^^^
+
+By default AIPPT stores library assets (uploaded/generated decks, rendered
+slide images, exported output) and the SQLite catalog on the local
+filesystem, rooted at the data directory. For container deployments where
+that directory is ephemeral, the ``s3`` backend persists everything to
+S3-compatible object storage (MinIO) instead.
+
+- ``AIPPT_STORAGE`` -- ``fs`` (default) or ``s3``. Selects the storage
+  backend. Equivalent to ``serve --storage``.
+- ``AIPPT_DATA_DIR`` -- Durable data root that object-storage keys are computed
+  relative to (e.g. ``/app/data``). Defaults to the ``dirs.yaml`` base
+  directory. Equivalent to ``serve --data-dir``. Set this to the data volume in
+  container deployments so keys match the ``uploads/`` / ``images/`` /
+  ``output/`` layout.
+
+When ``AIPPT_STORAGE=s3`` the following configure the MinIO client. The
+access/secret keys must arrive via a Kubernetes ``Secret`` (``secretKeyRef``)
+in production — never commit them to a repo file::
+
+    export AIPPT_STORAGE='s3'
+    export MINIO_ENDPOINT='s3minio.amd.com:21000'   # S3 API host:port (not the :21001 console)
+    export MINIO_BUCKET='ogmatic-zoo'
+    export MINIO_PREFIX='asic/aippt/'               # key namespace (default shown)
+    export MINIO_ACCESS_KEY='...'
+    export MINIO_SECRET_KEY='...'
+    export MINIO_CA_BUNDLE='/etc/ssl/certs/ca-bundle-with-amd.pem'  # CA bundle for TLS
+    export MINIO_SECURE='1'                          # set 0/false to disable TLS
+
+In ``s3`` mode the pod's local data directory is a read-through/write-through
+cache and MinIO is the source of truth. The catalog is restored from the
+``catalog/slides.db`` snapshot on startup and a debounced snapshot is pushed
+back after catalog writes; blob assets (decks, slide images, sources, output)
+are uploaded after they are written and fetched back on a cold pod before
+serving. The ``fs`` backend keeps everything on the local volume as before.
+
+To seed object storage from an existing local data directory (one-time
+cutover), use ``aippt storage backfill`` (``--dry-run`` to preview)::
+
+    aippt storage backfill --data-dir /app/data --dry-run
+    aippt storage backfill --data-dir /app/data
+
+The production cutover, sealed-secret, and TLS-trust steps are documented in
+``deploy/slai-app-prod/aippt/OBJECT-STORAGE.md``.

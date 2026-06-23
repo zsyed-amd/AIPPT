@@ -693,6 +693,70 @@ def load_sharepoint_config(config_path: str) -> Optional[SharePointConfig]:
     )
 
 
+# ---------------------------------------------------------------------------
+# Storage backend (AIPPT_STORAGE + MINIO_* env)
+# ---------------------------------------------------------------------------
+
+DEFAULT_STORAGE_BACKEND = "fs"
+DEFAULT_MINIO_PREFIX = "asic/aippt/"
+
+
+@dataclass(frozen=True)
+class StorageConfig:
+    """Resolved storage backend selection and object-store coordinates.
+
+    ``backend`` is ``"fs"`` (default) or ``"s3"``. The ``s3``/MinIO fields are
+    only consulted when ``backend == "s3"``; they are read from the environment
+    so credentials arrive via a k8s Secret (``secretKeyRef``) in production and
+    never live in a repo file.
+    """
+    backend: str = DEFAULT_STORAGE_BACKEND
+    endpoint: Optional[str] = None
+    bucket: Optional[str] = None
+    prefix: str = DEFAULT_MINIO_PREFIX
+    access_key: Optional[str] = None
+    secret_key: Optional[str] = None
+    ca_bundle: Optional[str] = None
+    secure: bool = True
+
+
+def load_storage_config(backend: Optional[str] = None) -> StorageConfig:
+    """Resolve the storage configuration from the environment.
+
+    Reads ``AIPPT_STORAGE`` (``fs``|``s3``, default ``fs``) unless *backend* is
+    given explicitly. For the ``s3`` backend the MinIO coordinates come from:
+
+    - ``MINIO_ENDPOINT``   -- host:port of the S3 API (e.g. ``s3minio.amd.com:21000``)
+    - ``MINIO_BUCKET``     -- bucket name (e.g. ``ogmatic-zoo``)
+    - ``MINIO_PREFIX``     -- key prefix (default ``asic/aippt/``)
+    - ``MINIO_ACCESS_KEY`` / ``MINIO_SECRET_KEY`` -- credentials
+    - ``MINIO_CA_BUNDLE``  -- optional CA bundle path for TLS verification
+    - ``MINIO_SECURE``     -- ``0``/``false`` to disable TLS (default on)
+
+    No validation is performed here -- ``storage.build_storage`` reports any
+    missing required s3 fields when it constructs the client.
+    """
+    resolved = (backend or os.environ.get("AIPPT_STORAGE") or DEFAULT_STORAGE_BACKEND).strip().lower()
+
+    prefix = os.environ.get("MINIO_PREFIX", DEFAULT_MINIO_PREFIX)
+    if prefix and not prefix.endswith("/"):
+        prefix += "/"
+
+    secure_raw = os.environ.get("MINIO_SECURE", "").strip().lower()
+    secure = secure_raw not in ("0", "false", "no")
+
+    return StorageConfig(
+        backend=resolved,
+        endpoint=os.environ.get("MINIO_ENDPOINT"),
+        bucket=os.environ.get("MINIO_BUCKET"),
+        prefix=prefix,
+        access_key=os.environ.get("MINIO_ACCESS_KEY"),
+        secret_key=os.environ.get("MINIO_SECRET_KEY"),
+        ca_bundle=os.environ.get("MINIO_CA_BUNDLE") or None,
+        secure=secure,
+    )
+
+
 def _create_default_dirs_yaml(path: str) -> None:
     """Write a dirs.yaml with default values."""
     content = (

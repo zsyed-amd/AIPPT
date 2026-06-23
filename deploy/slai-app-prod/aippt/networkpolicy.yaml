@@ -47,3 +47,8 @@ spec:
     - ports:
         - protocol: TCP
           port: 443
+    # MinIO S3 API (s3minio.amd.com:21000) for object-storage persistence
+    # (uploads/images/output + SQLite catalog snapshot under asic/aippt/).
+    - ports:
+        - protocol: TCP
+          port: 21000

@@ -20,8 +20,10 @@ If that passes, you are ready to work.
 
 The five hard rules:
 
-1. Every non-trivial change starts with a **PRD** in `.local-docs/plans/`
-   built from `.local-docs/plans/PRD-TEMPLATE.md`.
+1. Every non-trivial change starts with a **PRD** in the shared `swproductmgmt`
+   repo at `~/git/swproductmgmt/projects/aippt/prds/`, built from
+   `~/git/swproductmgmt/projects/aippt/PRD-TEMPLATE.md` and published for review
+   (see §4).
 2. Feature work happens on a **branch** (and ideally a **git worktree**),
    never directly on `main`.
 3. Tests come **first** — TDD discipline. The fast `pytest` suite must pass
@@ -44,9 +46,9 @@ docs/                   Sphinx source (.rst + .md)
   _build/html/          Build output, served at /docs by the web UI
 tests/                  pytest suite (mostly mocked; e2e/live opt-in)
 deploy/slai-app-prod/   K8s manifests for the SLAI app platform
-.local-docs/plans/      Gitignored PRDs and implementation plans
-  PRD-TEMPLATE.md       Required starting point for new PRDs
-  implemented/          Completed PRDs (archive)
+                        (PRDs now live in the shared swproductmgmt repo at
+                         ~/git/swproductmgmt/projects/aippt/prds/ — see §4. The former
+                         gitignored .local-docs/plans/ tree is retired.)
 skills/                 Source of truth for Claude/Cursor skills
 .claude/skills/         Symlinks → skills/
 .cursor/skills/         Symlinks → skills/
@@ -97,10 +99,21 @@ app starts in view-only mode automatically.
 
 ## 4. Project tracking
 
-PRDs are the unit of planning. **Where you personally track tasks, daily
-notes, or follow-ups is up to you** — Kanban board, sticky notes, Obsidian,
-plain text, whatever works. The repo only requires that work is captured in
-a PRD before implementation begins.
+PRDs are the unit of planning, and they live in the shared **`swproductmgmt`**
+repo at **`~/git/swproductmgmt/projects/aippt/prds/`** — the single source of truth for
+PRD content, and where collaboration and review happen. **Where you personally
+track status, daily notes, or follow-ups is up to you** — the maintained
+dashboard is the `AIPPT PRD Tracker` note in the Obsidian vault, but Kanban,
+plain text, or anything else works. The repo only requires that work is
+captured in a PRD before implementation begins.
+
+> **Migration note (2026-06):** PRDs previously lived in the gitignored
+> `.local-docs/plans/` tree and were mirrored into the Obsidian vault at
+> `30 - Projects/AIPPT/PRDs/`. Both are being retired in favor of the single
+> `~/git/swproductmgmt/projects/aippt/prds/` home; the vault keeps only the tracker
+> dashboard. **Migration complete (2026-06):** `.local-docs/plans/` and the
+> vault `PRDs/` copies have been removed; all PRDs now live in
+> `~/git/swproductmgmt/projects/aippt/prds/`.
 
 ### PRD lifecycle
 
@@ -108,14 +121,60 @@ a PRD before implementation begins.
 draft  →  in-review  →  in-progress  →  implemented
 ```
 
-| State         | Where it lives                                       |
-| ------------- | ---------------------------------------------------- |
-| `draft`       | `.local-docs/plans/YYYY-MM-DD-feature-name.md`       |
-| `in-review`   | Same file; frontmatter `status: in-review`           |
-| `in-progress` | Same file; frontmatter `status: in-progress`         |
-| `implemented` | Moved to `.local-docs/plans/implemented/`            |
+| State         | Where it lives                                                       |
+| ------------- | ------------------------------------------------------------------- |
+| `draft`       | `~/git/swproductmgmt/projects/aippt/prds/YYYY-MM-DD-feature-name.md`          |
+| `in-review`   | Open PR against swproductmgmt; frontmatter `status: in-review`       |
+| `in-progress` | Merged to `~/git/swproductmgmt/projects/aippt/prds/`; `status: in-progress`  |
+| `implemented` | Moved to `~/git/swproductmgmt/projects/aippt/prds/implemented/`              |
 
 The PRD file's frontmatter `status` field is the source of truth for state.
+
+### Collaborating on PRDs (the swproductmgmt flow)
+
+AIPPT PRDs are shared work now, not a personal scratchpad. They live in the
+`AMD-ROCm-Internal/swproductmgmt` collaboration repo (cloned locally at
+`~/git/swproductmgmt`), which has one house rule on **every** change there:
+
+> **branch → PR → reviewed *and merged by someone else*.** Never push to
+> swproductmgmt's `main`. Never merge your own PR there.
+
+This is stricter than AIPPT's own code workflow (§7), where you merge your own
+feature branch to `main`. Keep the two straight: **code in this repo follows
+§7; PRDs in swproductmgmt follow the house rule above.**
+
+Publish a PRD with the team's `/github` skill. Run these from your clone
+(`cd ~/git/swproductmgmt`):
+
+1. Draft/edit the PRD under `~/git/swproductmgmt/projects/aippt/prds/`.
+2. Dry-run: `/github publish projects/aippt/prds/<file>.md projects/aippt/prds/ --dry-run`.
+3. After confirming the diff, publish for review:
+   `/github publish projects/aippt/prds/<file>.md projects/aippt/prds/ --no-merge`. `--no-merge`
+   is **mandatory** — the skill auto-squash-merges by default, and the house
+   rule requires a human reviewer to merge.
+4. Request a reviewer, send them the PR URL. Push more commits to the same
+   branch to address feedback (re-running `--no-merge` is idempotent). The
+   reviewer approves **and merges** in the GitHub UI.
+
+**Reviewer handles are `_amdeng`-suffixed** and must be resolved from org
+membership — `--add-reviewer mkarvir` silently resolves to an unrelated
+github.com account:
+
+- Onil Gunawardana → `ogunawar_amdeng`
+- Mrinal Karvir → `mkarvir_amdeng`
+
+(Full handle list + swproductmgmt IDs: `~/git/scripts/TOOLS.md`.)
+
+PR body for a PRD review (mirrors the swproductmgmt house template): what's new
+vs. the prior version · what to focus the review on · open questions.
+
+Branch naming in swproductmgmt uses the **house** convention
+`<handle>/<short-name>` (e.g. `melliott/aippt-live-render`), *not* this repo's
+`feature/<name>`.
+
+House docs: `~/git/swproductmgmt/docs/getting_started/05_publishing_a_prd.md`
+and `~/git/swproductmgmt/docs/getting_started/06_adding_a_project.md` (PRDs are
+"Pattern A — commit directly").
 
 ### When you can skip the PRD
 
@@ -128,10 +187,10 @@ When in doubt, write the PRD. PRDs are cheap, surprises are expensive.
 
 ## 5. Authoring a PRD
 
-1. **Copy the template:**
+1. **Copy the template** (run from your `~/git/swproductmgmt` clone):
    ```bash
-   cp .local-docs/plans/PRD-TEMPLATE.md \
-      .local-docs/plans/$(date +%Y-%m-%d)-my-feature.md
+   cp projects/aippt/PRD-TEMPLATE.md \
+      projects/aippt/prds/$(date +%Y-%m-%d)-my-feature.md
    ```
 2. **Fill in every section.** Sections that do not apply get the literal
    text "No CLI changes" / "No UI changes" / "No data model changes" —
@@ -144,8 +203,9 @@ When in doubt, write the PRD. PRDs are cheap, surprises are expensive.
      extend. TDD means these get written first.
    - **Implementation Tasks** — ordered, independently committable tasks.
      Each row becomes a commit (or close to it).
-4. **Request review** before starting implementation. A 15-minute review
-   conversation up front saves hours of rework.
+4. **Request review** before starting implementation — publish the PRD to
+   swproductmgmt and request a reviewer (see "Collaborating on PRDs" in §4).
+   A 15-minute review up front saves hours of rework.
 
 ### Documentation discipline
 
@@ -187,7 +247,7 @@ features. The skills are surfaced as the `superpowers:*` skill family.
 Workflow for a typical feature:
 
 ```
-brainstorm  →  writing-plans  →  (PRD lands in .local-docs/plans/)
+brainstorm  →  writing-plans  →  (PRD lands in ~/git/swproductmgmt/projects/aippt/prds/)
             →  using-git-worktrees  (create worktree, branch)
             →  test-driven-development  (write failing tests first)
             →  executing-plans  (implement one task at a time)

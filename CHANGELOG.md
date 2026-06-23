@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-06-15 — Object-Storage Persistence
+
 ### Added
 
 - **Web UI: Aurora theme** — a third theme mode (alongside Dark and Light)
@@ -21,6 +23,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   now emits a quick red flash animation on click instead of the default
   browser blue focus ring.
 
+- **Object-storage persistence backend (phase 2: read-through/write-through
+  wiring + deployable image).** In `s3` mode the pod's `/app/data` volume
+  becomes an ephemeral cache and MinIO is the source of truth. New
+  `aippt/web/asset_sync.py` (`persist_file`/`persist_tree`/`materialize_file`)
+  uploads decks, slide images, sources, and outputs after they are written and
+  fetches them back on a cold pod before serving; all functions are no-ops in
+  `fs` mode, so local behavior is unchanged. Wired into upload, create,
+  regenerate, write-notes, `download_deck`, `serve_slide_image`, and
+  `_get_slide_image_path`.
+- `AIPPT_DATA_DIR` / `serve --data-dir` defines the durable data root that
+  object-storage keys are computed relative to (e.g. `/app/data`), so keys
+  match the `uploads/…` / `images/<deck>/…` / `output/…` layout regardless of
+  the working directory. Exposed as `app.state.data_root`.
+- `aippt storage backfill` — one-time upload of local `uploads/`/`images/`/
+  `output/` plus a catalog snapshot to object storage (`--dry-run` to preview).
+- Deployment wired for object storage: `deployment.yaml` sets `AIPPT_STORAGE=s3`
+  + `MINIO_*` (keys via `secretKeyRef: aippt-secrets`); the Dockerfile bakes the
+  AMD Corporate Root CA + issuing CA (`deploy/ca/amd-root-ca.pem`) into
+  `/etc/ssl/certs/ca-bundle-with-amd.pem` and passes `--data-dir /app/data`, so
+  minio-py verifies the s3minio cert under `readOnlyRootFilesystem`. Cutover and
+  rollback steps in `deploy/slai-app-prod/aippt/OBJECT-STORAGE.md`.
+- **Object-storage persistence backend (phase 1: abstraction + catalog
+  snapshot/restore).** New `aippt/storage.py` defines a `Storage` protocol with
+  two backends: `FsStorage` (local filesystem, the default, byte-for-byte
+  equivalent to historical behavior) and `S3Storage` (S3-compatible object
+  storage via `minio-py`, keys namespaced under `asic/aippt/`). Selected by the
+  `AIPPT_STORAGE=fs|s3` config switch (env var or `serve --storage`), wired
+  through `create_app` onto `app.state.storage`. The s3 backend reads MinIO
+  coordinates from `MINIO_ENDPOINT` / `MINIO_BUCKET` / `MINIO_PREFIX` /
+  `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` / `MINIO_CA_BUNDLE` / `MINIO_SECURE`;
+  credentials never live in a repo file. Default `fs` requires no new
+  dependency (minio is imported lazily).
+- `catalog.snapshot_db()` / `catalog.restore_db()` persist the SQLite catalog
+  to/from object storage as a single consistent file using SQLite's online
+  backup API (WAL-safe). `SnapshotScheduler` debounces snapshots so a burst of
+  catalog writes coalesces into one push. In s3 mode the web app restores the
+  catalog from `catalog/slides.db` on startup (before any request opens the DB)
+  and installs the scheduler, which is flushed on shutdown; catalog commits
+  trigger a debounced snapshot via a `get_db` connection hook. In fs mode the
+  hook is inert and behavior is unchanged.
+- `serve --storage {fs,s3}` flag, overriding the `AIPPT_STORAGE` env var.
 - `AGENTS.md` at repo root as the vendor-neutral entry point for AI
   coding assistants (Claude Code, Cursor, OpenAI Codex, Aider, Goose,
   Gemini CLI). Points at `CONTRIBUTING.md` for process and `CLAUDE.md`
@@ -76,6 +119,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `aippt.py` legacy-syntax wrapper now recognizes the `storage` and
+  `merge-template` subcommands. They were missing from the wrapper's
+  hardcoded subcommand set, so `aippt storage …` / `aippt merge-template …`
+  were misrouted into the legacy `create` positional path.
 - Linux Graph render path: `aippt/render.py` now renames `pdftoppm`'s `slide-NN.png` output to the `Slide{i}.png` pattern that `catalog_deck` globs for, so `/api/decks/{id}/slides` returns populated `image_path` values and the UI thumbnail grid renders. Previously every slide had `image_path: null` even when the upload reported `images_exported: true`.
 - `app.py` startup hook migrated from the deprecated `@app.on_event("startup")` to an `asynccontextmanager` lifespan.
 
@@ -341,7 +388,8 @@ Complete rewrite from standalone scripts into a modular Python package with cata
   - Recursive shape text extraction (groups, tables)
   - Optional speaker notes inclusion
 
-[unreleased]: https://github.com/shamsway/aippt/compare/v3.3.0...HEAD
+[unreleased]: https://github.com/shamsway/aippt/compare/v3.6.0...HEAD
+[3.6.0]: https://github.com/shamsway/aippt/compare/v3.5.0...v3.6.0
 [3.3.0]: https://github.com/shamsway/aippt/compare/v3.2.0...v3.3.0
 [3.2.0]: https://github.com/shamsway/aippt/compare/v3.1.0...v3.2.0
 [3.1.0]: https://github.com/shamsway/aippt/compare/v3.0.0...v3.1.0

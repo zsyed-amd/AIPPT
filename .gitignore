@@ -70,7 +70,7 @@ test-sections.md
 
 # Node
 node_modules/
-*.bak
+*.bak*
 
 # Misc
 llm-examples/

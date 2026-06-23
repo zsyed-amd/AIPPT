@@ -16,7 +16,7 @@ def main():
     # Legacy: aippt.py outline.md template.pptx output.pptx [options]
     # New: aippt.py create outline.md template.pptx output.pptx [options]
     if len(sys.argv) > 1 and not sys.argv[1].startswith('-'):
-        subcommands = {'create', 'reverse', 'catalog', 'search', 'remix', 'analyze', 'export', 'export-images', 'serve', 'models', 'ingest', 'tags', 'tag', 'untag', 'decks', 'improve', 'write-notes', 'db-info', 'migrate-paths', 'merge', 'mcp', 'metadata'}
+        subcommands = {'create', 'reverse', 'catalog', 'search', 'remix', 'analyze', 'export', 'export-images', 'serve', 'storage', 'models', 'ingest', 'tags', 'tag', 'untag', 'decks', 'improve', 'write-notes', 'db-info', 'migrate-paths', 'merge', 'merge-template', 'mcp', 'metadata'}
         if sys.argv[1] not in subcommands:
             # Legacy mode - insert 'create' as the subcommand
             sys.argv.insert(1, 'create')

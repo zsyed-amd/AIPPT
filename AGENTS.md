@@ -12,8 +12,11 @@ change. This file does not duplicate it.
 
 Every non-trivial change goes through this loop. No exceptions for AI agents.
 
-1. **PRD** — copy `.local-docs/plans/PRD-TEMPLATE.md` and fill every section.
-   File at `.local-docs/plans/YYYY-MM-DD-feature-name.md`.
+1. **PRD** — copy `~/git/swproductmgmt/projects/aippt/PRD-TEMPLATE.md` (shared repo)
+   and fill every section. File at
+   `~/git/swproductmgmt/projects/aippt/prds/YYYY-MM-DD-feature-name.md`, then publish for
+   review (`/github publish … --no-merge`, reviewer requested — never self-merge
+   in swproductmgmt). See `CONTRIBUTING.md` §4.
 2. **Branch / worktree** — `feature/<name>` off `main`. Worktrees in
    `.worktrees/<short-name>/` (gitignored) are preferred.
 3. **TDD** — write the failing test first, then the minimum code to pass.
@@ -73,7 +76,9 @@ than a generic "AI assistant" label.
 - Process questions → `CONTRIBUTING.md`
 - Project conventions, CLI commands, environment setup → `CLAUDE.md`
 - Skill catalogue → `SKILLS.md`
-- Active PRDs → `.local-docs/plans/`
+- Active PRDs → `~/git/swproductmgmt/projects/aippt/prds/` (shared; branch→PR→reviewed
+  and merged by someone else)
 - Implemented PRDs (the historical record of how decisions were made) →
-  `.local-docs/plans/implemented/`
+  `~/git/swproductmgmt/projects/aippt/prds/implemented/`
+- PRD status dashboard → `AIPPT PRD Tracker` note in the Obsidian vault
 - Production deployment state → `deploy/slai-app-prod/`

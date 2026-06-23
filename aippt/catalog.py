@@ -5,16 +5,24 @@ import logging
 import os
 import re
 import sqlite3
+import tempfile
+import threading
 from datetime import datetime
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import TYPE_CHECKING, List, Dict, Optional, Tuple
 
 from pptx import Presentation
 
 from aippt.reverse import extract_text_from_shape
 from aippt.sections import read_sections
 
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from aippt.storage import Storage
+
 logger = logging.getLogger(__name__)
+
+# Object-storage key for the catalog snapshot (see snapshot_db/restore_db).
+CATALOG_SNAPSHOT_KEY = "catalog/slides.db"
 
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
@@ -32,9 +40,24 @@ def display_name(name: str) -> str:
     return _UUID_PREFIX_RE.sub('', name)
 
 
+class _CatalogConnection(sqlite3.Connection):
+    """A catalog connection whose successful commits trigger a debounced
+    object-storage snapshot. The trigger is a no-op when no snapshot scheduler
+    is installed (the default, filesystem mode), so committing behaves exactly
+    as before unless an object-storage backend is active.
+    """
+
+    snapshot_on_commit = False
+
+    def commit(self):
+        super().commit()
+        if self.snapshot_on_commit:
+            request_snapshot()
+
+
 def get_db(db_path: str = "slides.db") -> sqlite3.Connection:
     """Open database connection, create schema if needed."""
-    conn = sqlite3.connect(db_path, timeout=30)
+    conn = sqlite3.connect(db_path, timeout=30, factory=_CatalogConnection)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA foreign_keys = ON")
@@ -78,7 +101,153 @@ def get_db(db_path: str = "slides.db") -> sqlite3.Connection:
             logger.debug("Migration: added slides.%s", col_name)
 
     conn.commit()
+    # Schema setup is done committing; arm snapshot-on-commit so only real
+    # catalog mutations from here on trigger a debounced snapshot.
+    conn.snapshot_on_commit = True
     return conn
+
+
+# ---------------------------------------------------------------------------
+# Object-storage snapshot / restore for the SQLite catalog
+#
+# SQLite cannot run directly off object storage, so the catalog lives on a
+# local (ephemeral) volume and is snapshotted to / restored from object storage
+# as a single consistent file. Snapshots use SQLite's online backup API, which
+# yields a WAL-safe image even with writes in flight (superior to copying the
+# .db file, which can capture a torn WAL state). Validated end-to-end in the
+# 2026-06-11 spike (upload -> cold-restore -> PRAGMA integrity_check = ok).
+# ---------------------------------------------------------------------------
+
+
+def snapshot_db(local_path: str, storage: "Storage", key: str = CATALOG_SNAPSHOT_KEY) -> None:
+    """Upload a consistent snapshot of the catalog at *local_path* to *storage*.
+
+    Uses the online backup API so the snapshot is consistent even if WAL writes
+    are in flight. No-op-safe to call repeatedly (overwrites the same key).
+    """
+    src = sqlite3.connect(local_path, timeout=30)
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            snap = os.path.join(td, "snapshot.db")
+            dst = sqlite3.connect(snap)
+            try:
+                with dst:
+                    src.backup(dst)
+            finally:
+                dst.close()
+            with open(snap, "rb") as fh:
+                storage.put(key, fh, content_type="application/octet-stream")
+    finally:
+        src.close()
+    logger.info("Catalog snapshot uploaded to %s", key)
+
+
+def restore_db(local_path: str, storage: "Storage", key: str = CATALOG_SNAPSHOT_KEY) -> bool:
+    """Restore the catalog snapshot from *storage* into *local_path*.
+
+    Returns True if a snapshot was found and restored, False if no snapshot
+    exists yet (cold start with an empty store -- caller starts fresh). Any
+    stale WAL/SHM sidecars next to *local_path* are removed first so a restored
+    image is never mixed with a previous incarnation's journal.
+    """
+    if not storage.exists(key):
+        logger.info("No catalog snapshot at %s; starting empty", key)
+        return False
+    os.makedirs(os.path.dirname(os.path.abspath(local_path)), exist_ok=True)
+    for sidecar in (local_path + "-wal", local_path + "-shm"):
+        try:
+            os.remove(sidecar)
+        except FileNotFoundError:
+            pass
+    data = storage.get(key)
+    with open(local_path, "wb") as fh:
+        fh.write(data)
+    logger.info("Catalog restored from %s (%d bytes)", key, len(data))
+    return True
+
+
+class SnapshotScheduler:
+    """Debounce catalog snapshots so a burst of writes coalesces into one push.
+
+    Single-writer by design: the production deployment runs ``replicas: 1``, so
+    there is no multi-writer race. Each ``request()`` (re)arms a timer; the
+    snapshot fires once the writes go quiet for ``debounce_seconds``. ``flush``
+    forces an immediate snapshot if one is pending (used on shutdown and in
+    tests); ``shutdown`` cancels any pending timer.
+    """
+
+    def __init__(
+        self,
+        db_path: str,
+        storage: "Storage",
+        key: str = CATALOG_SNAPSHOT_KEY,
+        debounce_seconds: float = 5.0,
+    ):
+        self.db_path = db_path
+        self.storage = storage
+        self.key = key
+        self.debounce_seconds = debounce_seconds
+        self._lock = threading.Lock()
+        self._timer: Optional[threading.Timer] = None
+        self._pending = False
+
+    def request(self) -> None:
+        with self._lock:
+            self._pending = True
+            if self._timer is not None:
+                self._timer.cancel()
+            self._timer = threading.Timer(self.debounce_seconds, self._fire)
+            self._timer.daemon = True
+            self._timer.start()
+
+    def _fire(self) -> None:
+        with self._lock:
+            self._timer = None
+            if not self._pending:
+                return
+            self._pending = False
+        try:
+            snapshot_db(self.db_path, self.storage, self.key)
+        except Exception:  # pragma: no cover - background thread guard
+            logger.exception("Debounced catalog snapshot failed")
+
+    def flush(self) -> None:
+        """Snapshot immediately if a snapshot is pending."""
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+            pending = self._pending
+            self._pending = False
+        if pending:
+            snapshot_db(self.db_path, self.storage, self.key)
+
+    def shutdown(self) -> None:
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+            self._pending = False
+
+
+# Process-global scheduler. ``None`` (the default, filesystem mode) makes
+# ``request_snapshot`` inert, so the catalog write paths stay byte-for-byte
+# identical to historical behavior unless an object-storage backend installs a
+# scheduler at startup.
+_snapshot_scheduler: Optional[SnapshotScheduler] = None
+
+
+def set_snapshot_scheduler(scheduler: Optional[SnapshotScheduler]) -> None:
+    """Install (or clear with ``None``) the process-global snapshot scheduler."""
+    global _snapshot_scheduler
+    _snapshot_scheduler = scheduler
+
+
+def request_snapshot() -> None:
+    """Request a debounced catalog snapshot. No-op when no scheduler is installed."""
+    scheduler = _snapshot_scheduler
+    if scheduler is not None:
+        scheduler.request()
 
 
 def content_hash(title: str, text: str) -> str:

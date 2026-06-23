@@ -16,6 +16,10 @@ fastapi>=0.100.0     # Web framework
 uvicorn>=0.23.0      # ASGI server
 python-multipart>=0.0.6  # File uploads
 
+# Object storage (only needed when AIPPT_STORAGE=s3; the default fs backend
+# imports it lazily and runs without it installed)
+minio>=7.2,<8        # S3-compatible object storage (MinIO) backend
+
 # Development
 pytest>=7.0          # Testing
 
