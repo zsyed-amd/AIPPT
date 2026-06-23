@@ -29,6 +29,20 @@ flag list; the most commonly relevant options are:
 - ``--view-only`` -- Disable LLM features (also settable via
   ``AIPPT_VIEW_ONLY``; auto-detected when no gateway/API keys are present)
 
+Themes
+------
+
+The nav bar contains a theme switcher (top-right) with three modes:
+
+- **Dark** (default) — dark surface with teal accent.
+- **Light** — AMD corporate light palette.
+- **Aurora** — dark surface with an animated background of four colour blobs
+  (teal, purple, sky-blue, warm magenta) that drift and morph organically.
+  Purely cosmetic; has no effect on functionality.
+
+The selected theme is persisted to ``localStorage`` under the key
+``aippt_theme`` and restored on the next page load.
+
 Signing In
 ----------
 
