@@ -1213,10 +1213,62 @@ def _bearer_identity_unverified(request: Request) -> str:
     return "unparseable"
 
 
+def _suggested_ntid_from_bearer(request: Request) -> str:
+    """Best-effort NTID suggestion derived from the Bearer JWT, **unverified**.
+
+    Pulls ``preferred_username`` / ``upn`` / ``unique_name`` from the token
+    payload, takes the local-part (before ``@``), lowercases it, and returns
+    it only if it matches ``_NTID_RE``. Returns ``""`` when there is no Bearer,
+    the token isn't a parseable JWT, no usable claim is present, or the
+    derived value is malformed.
+
+    This is a UX hint only — the SPA uses it to pre-fill the NTID field so it
+    can't drift from the signed-in identity (the live 403s traced back to a
+    hand-typed typo, ``melliot`` vs ``melliott``). It is never used to gate;
+    the admin check still trusts the explicit ``X-AIPPT-NTID`` header. Adding
+    signature verification is the deferred v2 AAD-groups PRD.
+    """
+    import base64
+    import json as _json
+
+    token = _extract_bearer_token(request)
+    if not token:
+        return ""
+
+    parts = token.split(".")
+    if len(parts) != 3:
+        return ""
+
+    try:
+        padded = parts[1] + "=" * (-len(parts[1]) % 4)
+        payload = _json.loads(base64.urlsafe_b64decode(padded))
+    except Exception:
+        return ""
+
+    if not isinstance(payload, dict):
+        return ""
+
+    for key in ("preferred_username", "upn", "unique_name"):
+        val = payload.get(key)
+        if not isinstance(val, str) or not val:
+            continue
+        local = val.split("@", 1)[0].strip().lower()
+        if local and _NTID_RE.match(local):
+            return local
+    return ""
+
+
 def _is_admin(request: Request) -> bool:
     """Admin-tier v1 gate. True iff: Bearer present, X-AIPPT-NTID is well-
     formed, and the NTID is in ``app.state.admin_ntids`` (sourced from
     gateway.yaml ``admin_ntids:``).
+
+    The membership test is **case-insensitive**: the header is lowercased
+    here before comparison and ``load_admin_ntids`` lowercases the allowlist
+    at load, so case drift between config and client can't cause a silent
+    403. Only the membership test is lowercased — ``_extract_ntid_header``
+    still returns the original-case value for SharePoint paths and audit
+    logging, which should reflect what the client actually sent.
 
     This is the v1 design — see ``aippt.config.load_admin_ntids`` for the
     threat model. Callers should also short-circuit on view-only mode before
@@ -1232,7 +1284,7 @@ def _is_admin(request: Request) -> bool:
     if not ntid:
         return False
     admins = getattr(request.app.state, "admin_ntids", set()) or set()
-    return ntid in admins
+    return ntid.lower() in admins
 
 
 def _require_admin(request: Request, action: str):
@@ -1352,6 +1404,11 @@ async def auth_whoami(request: Request):
     This is the SPA's hint endpoint for showing/hiding admin controls.
     The actual gate runs server-side on each admin endpoint -- a malicious
     client that hides whoami's response and still calls DELETE gets 403.
+
+    ``suggested_ntid`` is the local-part of the Bearer token's identity
+    claim (lowercased, unverified) — a UX hint the SPA uses to pre-fill the
+    NTID field so it can't drift from who the user signed in as. It never
+    affects the gate; ``is_admin`` still keys off the explicit header.
     """
     signed_in = bool(_extract_bearer_token(request))
     try:
@@ -1362,6 +1419,7 @@ async def auth_whoami(request: Request):
         "signed_in": signed_in,
         "ntid": ntid,
         "is_admin": _is_admin(request),
+        "suggested_ntid": _suggested_ntid_from_bearer(request),
     }
 
 

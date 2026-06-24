@@ -50,5 +50,13 @@ upload:
 # useful for fully view-only deployments where no admin actions ever fire.
 # Upgrade path to AAD-group-based roles is tracked under the original M2
 # PRD.
+#
+# Matching is case-insensitive; keep entries lowercase and sorted.
 admin_ntids:
+  - ansgputa
+  - edtian
+  - egroenke
   - melliott
+  - miroy
+  - yrajesh
+  - zsyed

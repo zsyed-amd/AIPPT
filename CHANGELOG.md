@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Admin tier: case-insensitive NTID matching.** The admin allowlist gate
+  preserved exact case on both sides, so an ``X-AIPPT-NTID`` header whose
+  case differed from the ``admin_ntids`` entry silently returned 403.
+  ``load_admin_ntids`` now lowercases each entry and ``_is_admin`` lowercases
+  the header before the membership test, so config and client case can't
+  diverge. The header value returned for SharePoint paths and audit logs is
+  unchanged (still original-case) — only the membership test is normalized.
+- **Admin tier: typo-proof NTID via auto-fill.** The live 403 traced back to a
+  hand-typed NTID typo (``melliot`` vs ``melliott``), which case-insensitivity
+  can't catch. ``GET /api/auth/whoami`` now returns ``suggested_ntid`` — the
+  lowercased local-part of the Bearer token's identity claim
+  (``preferred_username``/``upn``/``unique_name``, unverified, UX hint only) —
+  and the SPA pre-fills the NTID field from it when none is saved. The field
+  stays editable and the gate still trusts only the explicit header.
+
+### Changed
+
+- **Admin allowlist expanded** from ``melliott`` to seven NTIDs
+  (``ansgputa``, ``edtian``, ``egroenke``, ``melliott``, ``miroy``,
+  ``yrajesh``, ``zsyed``) in ``gateway.yaml`` and ``gateway.yaml.example``.
+  Because ``gateway.yaml`` is baked into the image, this requires an image
+  rebuild + deploy to take effect.
+
 ## [3.6.0] - 2026-06-15 — Object-Storage Persistence
 
 ### Added

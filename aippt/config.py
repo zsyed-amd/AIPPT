@@ -488,10 +488,16 @@ def load_admin_ntids(config_path: Optional[str] = None) -> set:
           - jdoe
 
     Returns an empty set when the file is missing, the key is absent, or
-    the value is not a list. Each entry is stripped; entries that don't
-    match the same ``[A-Za-z0-9._-]+`` allowlist used for the
-    ``X-AIPPT-NTID`` header are silently dropped (a malformed entry in
-    config shouldn't crash the server).
+    the value is not a list. Each entry is stripped and lowercased before
+    it joins the set; entries that don't match the same
+    ``[A-Za-z0-9._-]+`` allowlist used for the ``X-AIPPT-NTID`` header are
+    silently dropped (a malformed entry in config shouldn't crash the
+    server).
+
+    Membership is **case-insensitive**: entries are lowercased here and the
+    gate (``aippt.web.routes._is_admin``) lowercases the incoming header
+    before testing, so ``MElliott`` in config matches a ``melliott`` header
+    and vice versa. Lowercasing at both sites keeps them from diverging.
 
     This is the v1 admin tier: an allowlist that the server trusts in
     combination with a valid Microsoft Bearer token. Audit logs record
@@ -528,7 +534,7 @@ def load_admin_ntids(config_path: Optional[str] = None) -> set:
     for entry in raw:
         if not isinstance(entry, str):
             continue
-        v = entry.strip()
+        v = entry.strip().lower()
         if pattern.match(v):
             out.add(v)
     return out

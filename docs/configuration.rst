@@ -218,13 +218,23 @@ hit admin-gated endpoints (``DELETE /api/decks/{id}``,
 .. code-block:: yaml
 
     admin_ntids:
+      - ansgputa
+      - edtian
+      - egroenke
       - melliott
-      - jdoe
+      - miroy
+      - yrajesh
+      - zsyed
 
 Entries must match the same ``[A-Za-z0-9._-]+`` allowlist enforced on
 the ``X-AIPPT-NTID`` header; malformed entries are silently dropped at
 load time. An empty list (or omitted block) denies everyone -- useful
 for fully view-only deployments.
+
+Matching is **case-insensitive**: entries are lowercased when the config
+loads and the incoming ``X-AIPPT-NTID`` header is lowercased before the
+membership test, so ``MElliott`` in either place matches ``melliott``.
+Keep config entries lowercase and sorted for readability.
 
 **Threat model.** The gate trusts the ``X-AIPPT-NTID`` header for
 membership checks, which a signed-in user could edit via

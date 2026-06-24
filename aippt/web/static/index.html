@@ -3087,6 +3087,19 @@
                 }
                 const data = await resp.json();
                 window.isAdmin = !!data.is_admin;
+                // Seed the NTID from the signed-in identity when the user
+                // never typed one. This is the typo-proof default — the live
+                // 403s traced back to a hand-typed NTID typo. Server derives
+                // suggested_ntid (unverified) from the Bearer claim; we only
+                // use it to fill an empty field, never to override an explicit
+                // value, and re-render the badge + admin gate with the result.
+                if (!getUserNtid() && data.suggested_ntid) {
+                    localStorage.setItem('aippt_ntid', data.suggested_ntid);
+                    applyMsAuthState(!!msAuth.getToken());
+                    // applyMsAuthState calls fetchWhoami again with the NTID
+                    // now set; that pass applies the admin gate.
+                    return;
+                }
             } catch (e) {
                 window.isAdmin = false;
             }

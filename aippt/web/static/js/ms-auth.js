@@ -250,6 +250,27 @@
         var preValid = saved.length > 0 && NTID_RE.test(saved);
         continueBtn.disabled = !preValid;
 
+        // If nothing is saved yet but the user already has a token (e.g. the
+        // "edit" path or a returning session), seed the field from the
+        // signed-in identity so the common case is typo-proof. Best-effort and
+        // non-blocking: if the user focuses/types first we leave their input
+        // alone. The server still gates on the explicit header — this only
+        // changes the default value.
+        if (!saved && getToken()) {
+            fetch('api/auth/whoami', {
+                headers: {'Authorization': 'Bearer ' + getToken()},
+            }).then(function (resp) {
+                return resp.ok ? resp.json() : null;
+            }).then(function (data) {
+                var hint = data && data.suggested_ntid;
+                if (hint && !ntidInput.value.trim()) {
+                    ntidInput.value = hint;
+                    continueBtn.disabled = !NTID_RE.test(hint);
+                    ntidError.textContent = '';
+                }
+            }).catch(function () { /* swallow — seeding is optional */ });
+        }
+
         return new Promise(function (resolve) {
             var resolved = false;
 

@@ -37,7 +37,13 @@ def app_with_admin(tmp_path, deck_path):
         db_path=db_path, uploads_dir=str(tmp_path / "u"),
         images_dir=str(tmp_path / "img"),
     )
-    app.state.admin_ntids = {"melliott", "jdoe"}
+    # Lowercase allowlist (as load_admin_ntids produces). Includes the six
+    # NTIDs added alongside the case-insensitivity fix so they're exercised
+    # end-to-end through the gate.
+    app.state.admin_ntids = {
+        "melliott", "jdoe",
+        "ansgputa", "edtian", "egroenke", "miroy", "yrajesh", "zsyed",
+    }
     return app
 
 
@@ -95,6 +101,14 @@ class TestLoadAdminNtids:
         cfg.write_text("admin_ntids: []\n", encoding="utf-8")
         assert load_admin_ntids(str(cfg)) == set()
 
+    def test_lowercases_entries(self, tmp_path):
+        # Matching is case-insensitive: entries are lowercased at load.
+        cfg = tmp_path / "gw.yaml"
+        cfg.write_text(
+            "admin_ntids:\n  - MElliott\n  - ZSYED\n", encoding="utf-8",
+        )
+        assert load_admin_ntids(str(cfg)) == {"melliott", "zsyed"}
+
 
 # ---------------------------------------------------------------------------
 # /api/auth/whoami
@@ -106,7 +120,10 @@ class TestWhoami:
         resp = client.get("/api/auth/whoami")
         assert resp.status_code == 200
         body = resp.json()
-        assert body == {"signed_in": False, "ntid": "", "is_admin": False}
+        assert body == {
+            "signed_in": False, "ntid": "", "is_admin": False,
+            "suggested_ntid": "",
+        }
 
     def test_signed_in_non_admin(self, client):
         resp = client.get(
@@ -140,6 +157,34 @@ class TestWhoami:
         assert body["ntid"] == ""
         assert body["is_admin"] is False
 
+    def test_mixed_case_ntid_is_admin(self, client):
+        # Header arrives mixed-case; allowlist is lowercase. Case-insensitive
+        # match → admin True. ntid echoes the original case the client sent
+        # (audit/SharePoint fidelity), but the gate still recognizes it.
+        resp = client.get(
+            "/api/auth/whoami",
+            headers={"Authorization": "Bearer tok", "X-AIPPT-NTID": "MElliott"},
+        )
+        body = resp.json()
+        assert body["ntid"] == "MElliott"
+        assert body["is_admin"] is True
+
+    def test_newly_added_ntid_is_admin(self, client):
+        # One of the six NTIDs added with this change.
+        resp = client.get(
+            "/api/auth/whoami",
+            headers={"Authorization": "Bearer tok", "X-AIPPT-NTID": "zsyed"},
+        )
+        assert resp.json()["is_admin"] is True
+
+    def test_near_miss_ntid_is_not_admin(self, client):
+        # A near-miss of a real admin NTID must not match.
+        resp = client.get(
+            "/api/auth/whoami",
+            headers={"Authorization": "Bearer tok", "X-AIPPT-NTID": "zsyed1"},
+        )
+        assert resp.json()["is_admin"] is False
+
 
 # ---------------------------------------------------------------------------
 # Admin gate on DELETE /api/decks/{id}
@@ -151,6 +196,14 @@ class TestDeleteDeckAdminGate:
         resp = client.delete(
             "/api/decks/1",
             headers={"Authorization": "Bearer tok", "X-AIPPT-NTID": "melliott"},
+        )
+        assert resp.status_code == 200
+
+    def test_admin_can_delete_mixed_case(self, client):
+        # The gate (not just whoami) honors case-insensitive matching.
+        resp = client.delete(
+            "/api/decks/1",
+            headers={"Authorization": "Bearer tok", "X-AIPPT-NTID": "MElliott"},
         )
         assert resp.status_code == 200
 
@@ -329,3 +382,72 @@ class TestBearerIdentityUnverified:
         }
         req = _Req(scope)
         assert _bearer_identity_unverified(req) == "sub:subject-id-only"
+
+
+# ---------------------------------------------------------------------------
+# suggested_ntid — Bearer-derived NTID hint (UX only; never used to gate)
+# ---------------------------------------------------------------------------
+
+
+class TestSuggestedNtid:
+    def test_whoami_suggests_local_part_from_upn(self, client):
+        # upn=MElliott@amd.com → local-part lowercased → "melliott".
+        jwt = _fake_jwt({"upn": "MElliott@amd.com"})
+        resp = client.get(
+            "/api/auth/whoami",
+            headers={"Authorization": f"Bearer {jwt}"},
+        )
+        assert resp.json()["suggested_ntid"] == "melliott"
+
+    def test_whoami_prefers_preferred_username(self, client):
+        # preferred_username wins over upn for the suggestion.
+        jwt = _fake_jwt({
+            "preferred_username": "ZSYED@amd.com",
+            "upn": "someoneelse@amd.com",
+        })
+        resp = client.get(
+            "/api/auth/whoami",
+            headers={"Authorization": f"Bearer {jwt}"},
+        )
+        assert resp.json()["suggested_ntid"] == "zsyed"
+
+    def test_whoami_suggestion_empty_without_claim(self, client):
+        # A JWT with no usable identity claim → empty suggestion.
+        jwt = _fake_jwt({"oid": "guid-only"})
+        resp = client.get(
+            "/api/auth/whoami",
+            headers={"Authorization": f"Bearer {jwt}"},
+        )
+        assert resp.json()["suggested_ntid"] == ""
+
+    def test_whoami_suggestion_empty_without_bearer(self, client):
+        resp = client.get("/api/auth/whoami")
+        assert resp.json()["suggested_ntid"] == ""
+
+    def test_suggestion_does_not_grant_admin(self, client):
+        # A Bearer whose identity is an admin, but no X-AIPPT-NTID header:
+        # the suggestion is offered, yet is_admin stays False because the gate
+        # trusts the explicit header, not the token-derived hint.
+        jwt = _fake_jwt({"upn": "melliott@amd.com"})
+        resp = client.get(
+            "/api/auth/whoami",
+            headers={"Authorization": f"Bearer {jwt}"},
+        )
+        body = resp.json()
+        assert body["suggested_ntid"] == "melliott"
+        assert body["ntid"] == ""
+        assert body["is_admin"] is False
+
+    def test_helper_rejects_malformed_local_part(self):
+        # Local-part with a disallowed char (after split/lower) → "".
+        from aippt.web.routes import _suggested_ntid_from_bearer
+        from starlette.requests import Request as _Req
+
+        jwt = _fake_jwt({"upn": "bad name@amd.com"})
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "path": "/",
+            "headers": [(b"authorization", f"Bearer {jwt}".encode())],
+        }
+        assert _suggested_ntid_from_bearer(_Req(scope)) == ""

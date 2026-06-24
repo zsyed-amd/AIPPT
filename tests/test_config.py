@@ -615,3 +615,34 @@ class TestResolvePath:
         """Nested relative paths are normalized."""
         result = resolve_path("a/../b/./c", str(tmp_path))
         assert result == os.path.normpath(os.path.join(str(tmp_path), "b/c"))
+
+
+from aippt.config import load_admin_ntids
+
+
+class TestLoadAdminNtidsCaseInsensitive:
+    """The admin allowlist loader lowercases entries so membership matching
+    is case-insensitive (see also tests/test_admin_tier.py)."""
+
+    def test_lowercases_entries(self, tmp_path):
+        cfg = tmp_path / "gw.yaml"
+        cfg.write_text(
+            "admin_ntids:\n  - MElliott\n  - ZSYED\n", encoding="utf-8",
+        )
+        assert load_admin_ntids(str(cfg)) == {"melliott", "zsyed"}
+
+    def test_mixed_case_dedupes_to_one(self, tmp_path):
+        cfg = tmp_path / "gw.yaml"
+        cfg.write_text(
+            "admin_ntids:\n  - melliott\n  - MELLIOTT\n  - MElliott\n",
+            encoding="utf-8",
+        )
+        assert load_admin_ntids(str(cfg)) == {"melliott"}
+
+    def test_regex_still_applies_to_lowercased_value(self, tmp_path):
+        # A space survives lowercasing and is still rejected by the allowlist.
+        cfg = tmp_path / "gw.yaml"
+        cfg.write_text(
+            "admin_ntids:\n  - 'Has Space'\n  - Good.Name\n", encoding="utf-8",
+        )
+        assert load_admin_ntids(str(cfg)) == {"good.name"}

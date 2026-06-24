@@ -21,5 +21,12 @@ sharepoint:
 # combined with a valid Microsoft Bearer token, may call admin-gated endpoints
 # (/api/logs, delete-deck, write-notes). Empty/absent = no admins (prod was
 # shipped this way, leaving /api/logs 403 for everyone — fixed 2026-06-23).
+# Matching is case-insensitive; keep entries lowercase and sorted.
 admin_ntids:
+  - ansgputa
+  - edtian
+  - egroenke
   - melliott
+  - miroy
+  - yrajesh
+  - zsyed
